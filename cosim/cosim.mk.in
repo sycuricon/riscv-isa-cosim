@@ -1,0 +1,15 @@
+cosim_subproject_deps = \
+	fdt 				\
+	fesvr 				\
+	softfloat 			\
+	disasm 				\
+	riscv 				\
+
+cosim_srcs = 	\
+  cj.cc 		\
+
+# just for test
+cosim_install_prog_srcs = \
+  cj.cc 		\
+
+cosim_install_lib = yes
