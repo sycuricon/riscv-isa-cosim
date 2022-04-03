@@ -8,8 +8,6 @@ cosim_subproject_deps = \
 cosim_srcs = 	\
   cj.cc 		\
 
-# just for test
 cosim_install_prog_srcs = \
-  cj.cc 		\
 
 cosim_install_lib = yes

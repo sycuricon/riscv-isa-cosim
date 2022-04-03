@@ -152,6 +152,7 @@ class regfile_t
 public:
   void write(size_t i, T value)
   {
+    last_i = i, wen = true;
     if (!zero_reg || i != 0)
       data[i] = value;
   }
@@ -165,10 +166,22 @@ public:
   }
   void reset()
   {
+    wen = false;
     memset(data, 0, sizeof(data));
+  }
+  bool get_last_write(size_t& last) const
+  {
+    last = last_i;
+    return wen;
+  }
+  void reset_last_write()
+  {
+    wen = false;
   }
 private:
   T data[N];
+  size_t last_i;
+  bool wen;
 };
 
 // helpful macros, etc

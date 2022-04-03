@@ -164,6 +164,8 @@ struct state_t
   static const int num_triggers = 4;
 
   reg_t pc;
+  reg_t last_pc;
+  insn_bits_t last_insn;
   regfile_t<reg_t, NXPR, true> XPR;
   regfile_t<freg_t, NFPR, false> FPR;
 
@@ -278,7 +280,7 @@ public:
   bool get_log_commits_enabled() const { return log_commits_enabled; }
 #endif
   void reset();
-  void step(size_t n); // run for n cycles
+  void step(size_t n, bool check_intrpt=true); // run for n cycles
   void set_csr(int which, reg_t val);
   uint32_t get_id() const { return id; }
   reg_t get_csr(int which, insn_t insn, bool write, bool peek = 0);
@@ -345,6 +347,10 @@ public:
 
   // When true, display disassembly of each instruction that's executed.
   bool debug;
+  bool cosim_verbose;
+  bool fix_pc;
+  bool pending_intrpt;
+
   // When true, take the slow simulation path.
   bool slow_path();
   bool halted() { return state.debug_mode; }

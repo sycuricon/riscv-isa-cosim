@@ -26,7 +26,7 @@
 processor_t::processor_t(isa_parser_t isa, const char* varch,
                          simif_t* sim, uint32_t id, bool halt_on_reset,
                          FILE* log_file, std::ostream& sout_)
-  : debug(false), halt_request(HR_NONE), isa(isa), sim(sim), id(id), xlen(0),
+  : debug(false), cosim_verbose(false), halt_request(HR_NONE), isa(isa), sim(sim), id(id), xlen(0),
   histogram_enabled(false), log_commits_enabled(false),
   log_file(log_file), sout_(sout_.rdbuf()), halt_on_reset(halt_on_reset),
   impl_table(256, false), last_pc(1), executions(1)
@@ -374,8 +374,8 @@ void state_t::reset(processor_t* const proc, reg_t max_isa)
 
   csrmap[CSR_SEED] = std::make_shared<seed_csr_t>(proc, CSR_SEED);
 
-  csrmap[CSR_MARCHID] = std::make_shared<const_csr_t>(proc, CSR_MARCHID, 5);
-  csrmap[CSR_MIMPID] = std::make_shared<const_csr_t>(proc, CSR_MIMPID, 0);
+  csrmap[CSR_MARCHID] = std::make_shared<const_csr_t>(proc, CSR_MARCHID, 1);
+  csrmap[CSR_MIMPID] = std::make_shared<const_csr_t>(proc, CSR_MIMPID, 0x20181004);
   csrmap[CSR_MVENDORID] = std::make_shared<const_csr_t>(proc, CSR_MVENDORID, 0);
   csrmap[CSR_MHARTID] = std::make_shared<const_csr_t>(proc, CSR_MHARTID, proc->get_id());
   const reg_t menvcfg_mask = (proc->extension_enabled(EXT_ZICBOM) ? MENVCFG_CBCFE | MENVCFG_CBIE: 0) |
@@ -685,9 +685,19 @@ void processor_t::debug_output_log(std::stringstream *s)
 
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
+
+  if (t.cause() != CAUSE_BREAKPOINT &&
+      t.cause() != CAUSE_USER_ECALL &&
+      t.cause() != CAUSE_SUPERVISOR_ECALL &&
+      t.cause() != CAUSE_VIRTUAL_SUPERVISOR_ECALL &&
+      t.cause() != CAUSE_MACHINE_ECALL) {
+    fix_pc = true;
+  }
+
+
   unsigned max_xlen = isa.get_max_xlen();
 
-  if (debug) {
+  if (debug && cosim_verbose) {
     std::stringstream s; // first put everything in a string, later send it to output
     s << "core " << std::dec << std::setfill(' ') << std::setw(3) << id
       << ": exception " << t.name() << ", epc 0x"

@@ -1,75 +1,42 @@
 #include "cj.h"
-#include "platform.h"
+#include "elfloader.h"
 #include "dts.h"
 #include "libfdt.h"
+#include "mmu.h"
 #include "../VERSION"
 
 #include <cstdio>
+#include <sstream>
 
-cosim_cj_t::cosim_cj_t(cfg_t* cfg, reg_t start_pc, reg_t mem_size)
-{
-  fprintf(stderr, "Starship Commit & Judge General Co-simulation Framework with Spike " SPIKE_VERSION "\n\n");
-
-  const char* varch = DEFAULT_VARCH;
-  bool halted = false;
-  bool real_time_clint = false;
-  std::vector<std::pair<reg_t, abstract_device_t*>> plugin_devices;
-  std::vector<std::string> htif_args;
-  std::vector<int> hartids;
-  std::vector<std::pair<reg_t, mem_t*>> mems(1, std::make_pair(reg_t(DRAM_BASE), new mem_t(mem_size)));
-  debug_module_config_t dm_config = {
-          .progbufsize = 2,
-          .max_sba_data_width = 0,
-          .require_authentication = false,
-          .abstract_rti = 0,
-          .support_hasel = true,
-          .support_abstract_csr_access = true,
-          .support_haltgroups = true,
-          .support_impebreak = true
-  };
-  const char *log_path = nullptr;
-  const char* dtb_file = NULL;
-  bool dtb_enabled = true;
-  FILE *cmd_file = NULL;
-
-#ifdef HAVE_BOOST_ASIO
-    boost::asio::io_service *io_service_ptr = NULL; // needed for socket command interface option -s
-    boost::asio::ip::tcp::acceptor *acceptor_ptr = NULL;
-#endif
-
-  sim_t s(cfg, varch, halted, real_time_clint,
-    start_pc, mems, plugin_devices, htif_args,
-    hartids, dm_config, log_path, dtb_enabled, dtb_file,
-#ifdef HAVE_BOOST_ASIO
-    io_service_ptr, acceptor_ptr,
-#endif
-    cmd_file);
-
+inline bool operator==(const float128_t& lhs, const float128_t& rhs) {
+  return (lhs.v[0] == rhs.v[0]) && (lhs.v[1] == rhs.v[1]);
 }
 
-cosim_cj_t::cosim_cj_t(config_t& cfg) {
+inline bool operator!=(const float128_t& lhs, const float128_t& rhs) {
+  return (lhs.v[0] != rhs.v[0]) || (lhs.v[1] != rhs.v[1]);
+}
+
+cosim_cj_t::cosim_cj_t(config_t& cfg) : tohost_addr(0) {
   isa_parser_t isa(cfg.isa(), cfg.priv());
-  FILE* logfile = NULL;
   std::ostream sout_(nullptr);
-
-  fprintf(stderr, "Starship Commit & Judge General Co-simulation Framework with Spike " SPIKE_VERSION "\n\n");
-
-  if (cfg.logfile()) {
-    logfile = fopen(cfg.logfile(), "w");
-  }
   sout_.rdbuf(std::cerr.rdbuf());
 
   // create memory and debug mmu
-  bus.add_device(cfg.mem_base(), new mem_t(cfg.mem_size() << 20));
+  mems.push_back(
+      std::make_pair(cfg.mem_base(),
+        new mem_t(cfg.mem_size() << 20)));
+  bus.add_device(mems[0].first, mems[0].second);
   debug_mmu = new mmu_t(this, NULL);
 
   // create processor
   for (size_t i = 0; i < cfg.nprocs(); i++) {
-    procs.push_back(new processor_t(isa, cfg.varch(), this, i, false, logfile, sout_));
+    procs.push_back(new processor_t(isa, cfg.varch(), this, i, false, cfg.logfile(), sout_));
     if (!procs[i]) {
-      std::cerr << "processor [" << i << "] create failed!" << std::endl ;
+      std::cerr << "processor [" << i << "] create failed!\n";
       exit(1);
     }
+    procs[i]->set_debug(true);
+    procs[i]->cosim_verbose = cfg.verbose();
   }
 
   // create device tree and compile
@@ -166,8 +133,79 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) {
 
     cpu_idx++;
   }
-}
 
+  // load test elf and setup symbol table
+  if (!cfg.elffile()) {
+    std::cerr << "At least one testcase is required!\n";
+    exit(1);
+  }
+  memif_t tmp(this);
+  reg_t elf_entry;
+  std::map<std::string, uint64_t> symbols = load_elf(cfg.elffile(), &tmp, &elf_entry);
+  if (symbols.count("tohost")) {
+    tohost_addr = symbols["tohost"];
+  } else {
+    fprintf(stderr, "warning: tohost symbols not in ELF; can't communicate with target\n");
+  }
+
+  for (auto i : symbols) {
+    auto it = addr2symbol.find(i.second);
+    if ( it == addr2symbol.end())
+      addr2symbol[i.second] = i.first;
+  }
+
+  // create bootrom
+  const int reset_vec_size = 8;
+  start_pc = cfg.start_pc() == reg_t(-1) ? elf_entry : cfg.start_pc();
+  uint32_t reset_vec[reset_vec_size] = {
+      0x297,                                      // auipc  t0, 0x0
+      0x28593 + (reset_vec_size * 4 << 20),       // addi   a1, t0, &dtb
+      0xf1402573,                                 // csrr   a0, mhartid
+      get_core(0)->get_xlen() == 32 ?
+      0x0182a283u :                                   // lw     t0, 24(t0)
+      0x0182b283u,                                    // ld     t0, 24(t0)
+      0x28067,                                    // jr     t0
+      0,
+      (uint32_t) (start_pc & 0xffffffff),
+      (uint32_t) (start_pc >> 32)
+  };
+  if (get_target_endianness() == memif_endianness_big) {
+    int i;
+    // Instuctions are little endian
+    for (i = 0; reset_vec[i] != 0; i++)
+      reset_vec[i] = to_le(reset_vec[i]);
+    // Data is big endian
+    for (; i < reset_vec_size; i++)
+      reset_vec[i] = to_be(reset_vec[i]);
+
+    // Correct the high/low order of 64-bit start PC
+    if (get_core(0)->get_xlen() != 32)
+      std::swap(reset_vec[reset_vec_size-2], reset_vec[reset_vec_size-1]);
+  } else {
+    for (int i = 0; i < reset_vec_size; i++)
+      reset_vec[i] = to_le(reset_vec[i]);
+  }
+
+  std::vector<char> rom((char*)reset_vec, (char*)reset_vec + sizeof(reset_vec));
+
+  rom.insert(rom.end(), dtb.begin(), dtb.end());
+  const int align = 0x1000;
+  rom.resize((rom.size() + align - 1) / align * align);
+
+  boot_rom.reset(new rom_device_t(rom));
+  bus.add_device(DEFAULT_RSTVEC, boot_rom.get());
+
+
+ // done
+  fprintf(stderr, "[*] `Commit & Judge' General Co-simulation Framework\n");
+  fprintf(stderr, "\t\tpowered by Spike " SPIKE_VERSION "\n");
+  fprintf(stderr, "- core %ld, isa: %s %s %s\n",
+          cfg.nprocs(), cfg.isa(), cfg.priv(), cfg.varch());
+  fprintf(stderr, "- memory configuration: 0x%lx 0x%lx, tohost: 0x%lx\n",
+          cfg.mem_base(), cfg.mem_size() << 20, tohost_addr);
+  fprintf(stderr, "- elf file: %s\n", cfg.elffile());
+  procs[0]->get_state()->pc = cfg.mem_base();
+}
 
 cosim_cj_t::~cosim_cj_t() {
   for (size_t i = 0; i < procs.size(); i++)
@@ -175,14 +213,153 @@ cosim_cj_t::~cosim_cj_t() {
   delete debug_mmu;
 }
 
+int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, bool check) {
+  processor_t* p = get_core(hartid);
+  state_t* s = p->get_state();
 
-__attribute__((weak)) int main() {
-  printf("Hello v0.2\n");
-  config_t cfg;
-  cosim_cj_t cj(cfg);
-  printf("Hello v0.2\n");
+  do {
+    p->step(1, p->pending_intrpt);
+  } while (get_core(0)->fix_pc);
 
+  // update tohost
+  auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
+  memcpy(&tohost_data, &data, sizeof data);
 
+  if (!check)
+    return 0;
+
+  reg_t sim_pc = s->last_pc;
+  uint32_t sim_insn = s->last_insn;
+  size_t regNo, fregNo;
+  if (s->XPR.get_last_write(regNo)) {
+//    printf("write back: %016lx\n", s->XPR[regNo]);
+    if (check_board.set(regNo, s->XPR[regNo]) != 0) {
+      printf("\x1b[31m[error] check board set %ld error \x1b[0m\n", regNo);
+      return 10;
+    }
+  }
+  if (s->FPR.get_last_write(fregNo)) {
+    if (f_check_board.set(fregNo, s->FPR[fregNo])) {
+      printf("\x1b[31m[error] float check board set %ld error \x1b[0m\n", fregNo);
+      return 10;
+    }
+  }
+
+  if (dut_pc != sim_pc ||
+      dut_insn != sim_insn) {
+    printf("\x1b[31m[error] PC SIM \x1b[33m%016lx \x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", sim_pc, dut_pc);
+    printf("\x1b[31m[error] INSN SIM \x1b[33m%08x \x1b[31m, DUT \x1b[36m%08x \x1b[0m\n", sim_insn, dut_insn);
+    return 255;
+  }
 
   return 0;
 }
+int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bool fc) {
+  processor_t* p = get_core(hartid);
+  state_t* s = p->get_state();
+
+  if (fc) {
+    if (f_check_board.clear(dut_waddr, freg(f64(dut_wdata))) != 0) {
+      printf("\x1b[31m[error] float check board check %d error \x1b[0m\n", dut_waddr);
+      return 10;
+    }
+  } else {
+    if (check_board.clear(dut_waddr, dut_wdata) != 0) {
+      printf("\x1b[31m[error] check board clear %d error \x1b[0m\n", dut_waddr);
+      return 10;
+    }
+  }
+
+  return 0;
+}
+void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
+  processor_t* p = get_core(hartid);
+  state_t* s = p->get_state();
+  reg_t except_code = cause & 63;
+  s->mip->backdoor_write_with_mask(1 << except_code, 1 << except_code);
+  p->pending_intrpt = true;
+}
+
+// chunked_memif_t virtual function
+void cosim_cj_t::read_chunk(addr_t taddr, size_t len, void* dst) {
+  assert(len == 8);
+  auto data = debug_mmu->to_target(debug_mmu->load_uint64(taddr));
+  memcpy(dst, &data, sizeof data);
+}
+
+void cosim_cj_t::write_chunk(addr_t taddr, size_t len, const void* src) {
+  assert(len == 8);
+  target_endian<uint64_t> data;
+  memcpy(&data, src, sizeof data);
+  debug_mmu->store_uint64(taddr, debug_mmu->from_target(data));
+}
+
+void cosim_cj_t::clear_chunk(addr_t taddr, size_t len) {
+  char zeros[chunk_max_size()];
+  memset(zeros, 0, chunk_max_size());
+
+  for (size_t pos = 0; pos < len; pos += chunk_max_size())
+    write_chunk(taddr + pos, std::min(len - pos, chunk_max_size()), zeros);
+}
+
+void cosim_cj_t::set_target_endianness(memif_endianness_t endianness) {
+  assert(endianness == memif_endianness_little);
+}
+
+memif_endianness_t cosim_cj_t::get_target_endianness() const {
+  return memif_endianness_little;
+}
+
+// simif_t virtual function
+static bool paddr_ok(reg_t addr) {
+  return (addr >> MAX_PADDR_BITS) == 0;
+}
+
+char* cosim_cj_t::addr_to_mem(reg_t addr) {
+  if (!paddr_ok(addr))
+    return NULL;
+  auto desc = bus.find_device(addr);
+  if (auto mem = dynamic_cast<mem_t*>(desc.second))
+    if (addr - desc.first < mem->size())
+      return mem->contents(addr - desc.first);
+  return NULL;
+}
+
+bool cosim_cj_t::mmio_load(reg_t addr, size_t len, uint8_t* bytes) {
+  if (addr + len < addr || !paddr_ok(addr + len - 1))
+    return false;
+  return bus.load(addr, len, bytes);
+}
+
+bool cosim_cj_t::mmio_store(reg_t addr, size_t len, const uint8_t* bytes) {
+  if (addr + len < addr || !paddr_ok(addr + len - 1))
+    return false;
+  return bus.store(addr, len, bytes);
+}
+
+void cosim_cj_t::proc_reset(unsigned id) {
+  // not implement here
+  printf("ToDo: cosim_cj_t::proc_reset\n");
+}
+
+const char* cosim_cj_t::get_symbol(uint64_t addr) {
+  auto it = addr2symbol.find(addr);
+  if(it == addr2symbol.end())
+    return nullptr;
+  return it->second.c_str();
+}
+
+//__attribute__((weak)) int main() {
+//  printf("Hello v0.3\n");
+//  config_t cfg;
+//  cfg.elffile = "/eda/project/riscv-tests/build/isa/rv64mi-p-illegal";
+//  cosim_cj_t cj(cfg);
+//
+//  while (true) {
+//    cj.cosim_commit_stage(0, 0, 0, false);
+//  }
+//
+//  printf("Exit ...\n");
+//
+//  return 0;
+//}

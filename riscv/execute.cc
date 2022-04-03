@@ -219,8 +219,14 @@ bool processor_t::slow_path()
 }
 
 // fetch/decode/execute loop
-void processor_t::step(size_t n)
+void processor_t::step(size_t n, bool check_intrpt)
 {
+//  printf("=================================\n");
+  fix_pc = false;
+  pending_intrpt = false;
+  state.XPR.reset_last_write();
+  state.FPR.reset_last_write();
+
   if (!state.debug_mode) {
     if (halt_request == HR_REGULAR) {
       enter_debug_mode(DCSR_CAUSE_DEBUGINT);
@@ -254,7 +260,8 @@ void processor_t::step(size_t n)
 
     try
     {
-      take_pending_interrupt();
+      if (check_intrpt)
+        take_pending_interrupt();
 
       if (unlikely(slow_path()))
       {
@@ -275,7 +282,11 @@ void processor_t::step(size_t n)
           }
 
           insn_fetch_t fetch = mmu->load_insn(pc);
-          if (debug && !state.serialized)
+
+          state.last_pc = pc;
+          state.last_insn = fetch.insn.bits();
+
+          if (debug && !state.serialized && cosim_verbose)
             disasm(fetch.insn);
           pc = execute_insn(this, pc, fetch);
           advance_pc();
@@ -355,4 +366,5 @@ void processor_t::step(size_t n)
 
     n -= instret;
   }
+//  printf("=================================\n");
 }
