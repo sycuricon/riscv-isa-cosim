@@ -350,8 +350,11 @@ void state_t::reset(processor_t* const proc, reg_t max_isa)
 
   csrmap[CSR_TSELECT] = tselect = std::make_shared<tselect_csr_t>(proc, CSR_TSELECT);
   memset(this->mcontrol, 0, sizeof(this->mcontrol));
-  for (auto &item : mcontrol)
+  for (auto &item : mcontrol) {
     item.type = 2;
+    item.maskmax = 4;
+  }
+
 
   csrmap[CSR_TDATA1] = std::make_shared<tdata1_csr_t>(proc, CSR_TDATA1);
   csrmap[CSR_TDATA2] = tdata2 = std::make_shared<tdata2_csr_t>(proc, CSR_TDATA2, num_triggers);
