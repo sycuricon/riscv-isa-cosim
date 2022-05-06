@@ -247,8 +247,8 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
 
   if (dut_pc != sim_pc ||
       dut_insn != sim_insn) {
-    printf("\x1b[31m[error] PC SIM \x1b[33m%016lx \x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", sim_pc, dut_pc);
-    printf("\x1b[31m[error] INSN SIM \x1b[33m%08x \x1b[31m, DUT \x1b[36m%08x \x1b[0m\n", sim_insn, dut_insn);
+    printf("\x1b[31m[error] PC SIM \x1b[33m%016lx\x1b[31m, DUT \x1b[36m%016lx\x1b[0m\n", sim_pc, dut_pc);
+    printf("\x1b[31m[error] INSN SIM \x1b[33m%08x\x1b[31m, DUT \x1b[36m%08x\x1b[0m\n", sim_insn, dut_insn);
     return 255;
   }
 

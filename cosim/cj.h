@@ -53,7 +53,7 @@ public:
       if (!valid[i])
         return 1;
       if (data[i] != value) {
-        printf("\x1b[33m[error] WDATA EMU %016lx \x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", data[i], value);
+        printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", data[i], value);
         return 2;
       }
 
