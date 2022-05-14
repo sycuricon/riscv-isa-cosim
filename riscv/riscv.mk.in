@@ -1274,6 +1274,7 @@ riscv_insn_list = \
     $(riscv_insn_ext_c) \
 	$(riscv_insn_priv) \
     $(riscv_insn_ext_k) \
+    $(riscv_insn_ext_h) \
 
 	# $(riscv_insn_ext_a) \
 	# $(riscv_insn_ext_c) \
