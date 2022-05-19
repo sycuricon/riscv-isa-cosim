@@ -272,7 +272,7 @@ public:
   ~processor_t();
 
   const isa_parser_t &get_isa() { return isa; }
-
+  bool commit_ecall;
   void set_debug(bool value);
   void set_histogram(bool value);
 #ifdef RISCV_ENABLE_COMMITLOG
@@ -406,6 +406,8 @@ public:
           {
             reg_t mask = ~((1 << (cto(tdata2)+1)) - 1);
             if ((value & mask) != (tdata2 & mask))
+              continue;
+            else if ((value & ~mask) >= (1 << state.mcontrol[i].maskmax))
               continue;
           }
           break;

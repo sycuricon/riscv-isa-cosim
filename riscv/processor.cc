@@ -689,11 +689,13 @@ void processor_t::debug_output_log(std::stringstream *s)
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
 
-  if (t.cause() != CAUSE_BREAKPOINT &&
+  if (commit_ecall && t.cause() != CAUSE_BREAKPOINT &&
       t.cause() != CAUSE_USER_ECALL &&
       t.cause() != CAUSE_SUPERVISOR_ECALL &&
       t.cause() != CAUSE_VIRTUAL_SUPERVISOR_ECALL &&
       t.cause() != CAUSE_MACHINE_ECALL) {
+    fix_pc = true;
+  } else {
     fix_pc = true;
   }
 
