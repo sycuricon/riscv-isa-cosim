@@ -13,7 +13,8 @@ mmu_t::mmu_t(simif_t* sim, processor_t* proc)
   check_triggers_fetch(false),
   check_triggers_load(false),
   check_triggers_store(false),
-  matched_trigger(NULL)
+  matched_trigger(NULL),
+  enable_insn_rdm(false)
 {
   flush_tlb();
   yield_load_reservation();
@@ -202,7 +203,7 @@ tlb_entry_t mmu_t::refill_tlb(reg_t vaddr, reg_t paddr, char* host_addr, access_
 
   if ((check_triggers_fetch && type == FETCH) ||
       (check_triggers_load && type == LOAD) ||
-      (check_triggers_store && type == STORE))
+      (check_triggers_store && type == STORE)) 
     expected_tag |= TLB_CHECK_TRIGGERS;
 
   if (pmp_homogeneous(paddr & ~reg_t(PGSIZE - 1), PGSIZE)) {

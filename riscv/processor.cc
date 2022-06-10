@@ -33,6 +33,8 @@ processor_t::processor_t(isa_parser_t isa, const char* varch,
 {
   VU.p = this;
 
+  commit_ecall = true;
+
 #ifndef __SIZEOF_INT128__
   if (extension_enabled('V')) {
     fprintf(stderr, "V extension is not supported on platforms without __int128 type\n");
@@ -377,8 +379,8 @@ void state_t::reset(processor_t* const proc, reg_t max_isa)
 
   csrmap[CSR_SEED] = std::make_shared<seed_csr_t>(proc, CSR_SEED);
 
-  csrmap[CSR_MARCHID] = std::make_shared<const_csr_t>(proc, CSR_MARCHID, 1);
-  csrmap[CSR_MIMPID] = std::make_shared<const_csr_t>(proc, CSR_MIMPID, 0x20181004);
+  csrmap[CSR_MARCHID] = std::make_shared<const_csr_t>(proc, CSR_MARCHID, 0); // 1
+  csrmap[CSR_MIMPID] = std::make_shared<const_csr_t>(proc, CSR_MIMPID, 0); // 0x20181004
   csrmap[CSR_MVENDORID] = std::make_shared<const_csr_t>(proc, CSR_MVENDORID, 0);
   csrmap[CSR_MHARTID] = std::make_shared<const_csr_t>(proc, CSR_MHARTID, proc->get_id());
   const reg_t menvcfg_mask = (proc->extension_enabled(EXT_ZICBOM) ? MENVCFG_CBCFE | MENVCFG_CBIE: 0) |
@@ -689,13 +691,13 @@ void processor_t::debug_output_log(std::stringstream *s)
 void processor_t::take_trap(trap_t& t, reg_t epc)
 {
 
-  if (commit_ecall && t.cause() != CAUSE_BREAKPOINT &&
+  if (t.cause() != CAUSE_BREAKPOINT &&
       t.cause() != CAUSE_USER_ECALL &&
       t.cause() != CAUSE_SUPERVISOR_ECALL &&
       t.cause() != CAUSE_VIRTUAL_SUPERVISOR_ECALL &&
       t.cause() != CAUSE_MACHINE_ECALL) {
     fix_pc = true;
-  } else {
+  } else if (!commit_ecall) {
     fix_pc = true;
   }
 

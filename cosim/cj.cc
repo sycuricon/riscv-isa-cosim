@@ -16,7 +16,9 @@ inline bool operator!=(const float128_t& lhs, const float128_t& rhs) {
   return (lhs.v[0] != rhs.v[0]) || (lhs.v[1] != rhs.v[1]);
 }
 
-cosim_cj_t::cosim_cj_t(config_t& cfg) : tohost_addr(0) {
+cosim_cj_t::cosim_cj_t(config_t& cfg) :
+  tohost_addr(0), tohost_data(0),
+  start_randomize(false) {
   isa_parser_t isa(cfg.isa(), cfg.priv());
   std::ostream sout_(nullptr);
   sout_.rdbuf(std::cerr.rdbuf());
@@ -216,6 +218,21 @@ cosim_cj_t::~cosim_cj_t() {
 int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, bool check) {
   processor_t* p = get_core(hartid);
   state_t* s = p->get_state();
+  mmu_t* mmu = p->get_mmu();
+
+  if (!start_randomize && dut_insn == 0x00002013UL) {
+    printf("[CJ] Enable insn randomization\n");
+    start_randomize = true;
+    mmu->set_insn_rdm(start_randomize);
+  } else if (start_randomize && dut_insn == 0xfff02013UL) {
+    printf("[CJ] Disable insn randomization\n");
+    start_randomize = false;
+    mmu->set_insn_rdm(start_randomize);
+  }
+
+  if (start_randomize) {
+    mmu->set_dut_insn(dut_insn);
+  }
 
   do {
     p->step(1, p->pending_intrpt);
@@ -279,6 +296,23 @@ void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
   s->mip->backdoor_write_with_mask(1 << except_code, 1 << except_code);
   p->pending_intrpt = true;
 }
+uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
+
+  if (in == 0x00002013UL || in == 0xfff02013UL) {
+    return in;
+  } else if (start_randomize) {
+    masker_inst_t insn(in, rv64, pc);
+    decode_inst_opcode(&insn);
+    decode_inst_oprand(&insn);
+    insn.mutation(true);
+    rv_inst enc = insn.encode();
+    return enc;
+  } else {
+   return in;
+  }
+}
+
+
 
 // chunked_memif_t virtual function
 void cosim_cj_t::read_chunk(addr_t taddr, size_t len, void* dst) {

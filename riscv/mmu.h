@@ -337,6 +337,17 @@ public:
       insn |= (insn_bits_t)from_le(*(const uint16_t*)translate_insn_addr_to_host(addr + 2)) << 16;
     }
 
+    if (enable_insn_rdm) {
+      printf("\e[1;33m[CJ] insn randomize: %016lx @ %08lx -> %08lx\e[0m\n", addr, insn, dut_insn);
+      if (((insn_length(insn) > 2)  && ((insn&0x7f) == (dut_insn&0x7f))) ||
+          ((insn_length(insn) == 2) && (insn&0xe003) == (dut_insn&0xe003))) {
+        insn = dut_insn;
+      } else {
+        printf("[CJ] Exit, randomized instruction has an unmatching opcode\n");
+        exit(10000);
+      }
+    }
+
     insn_fetch_t fetch = {proc->decode_insn(insn), insn};
     entry->tag = addr;
     entry->next = &icache[icache_index(addr + length)];
@@ -416,6 +427,9 @@ public:
     blocksz = size;
   }
 
+  void set_dut_insn(uint64_t in) { dut_insn = in; }
+  void set_insn_rdm(bool flag) { enable_insn_rdm = flag; }
+
 private:
   simif_t* sim;
   processor_t* proc;
@@ -423,6 +437,9 @@ private:
   reg_t load_reservation_address;
   uint16_t fetch_temp;
   uint64_t blocksz;
+
+  insn_bits_t dut_insn;
+  bool enable_insn_rdm;
 
   // implement an instruction cache for simulator performance
   icache_entry_t icache[ICACHE_ENTRIES];

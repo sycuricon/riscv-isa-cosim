@@ -1,4 +1,5 @@
 #ifndef _COSIM_CJ_H
+#define _COSIM_CJ_H
 #include "config.h"
 #include "platform.h"
 #include "cfg.h"
@@ -7,6 +8,8 @@
 #include "simif.h"
 #include "memif.h"
 #include "devices.h"
+
+#include "masker.h"
 
 // Using json to configure in future
 class config_t : public cfg_t {
@@ -81,6 +84,7 @@ class cosim_cj_t : simif_t, chunked_memif_t {
   int cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, bool check);
   int cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bool fc);
   void cosim_raise_trap(int hartid, reg_t cause);
+  uint64_t cosim_randomizer_insn(uint64_t in, uint64_t pc);
 
   // simif_t virtual function
   char* addr_to_mem(reg_t addr);
@@ -122,6 +126,7 @@ private:
   void reset();
   void idle();
 
+  bool start_randomize;
 };
 
 #endif

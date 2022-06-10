@@ -7,6 +7,7 @@ cosim_subproject_deps = \
 
 cosim_srcs = 	\
   cj.cc 		\
+  masker.cc     \
 
 cosim_install_prog_srcs = \
 
