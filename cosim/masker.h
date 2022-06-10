@@ -6,12 +6,6 @@
 #include <vector>
 #include <iostream>
 
-// bit operands
-#define bit(v, x) ((v >> x) & 1)
-#define bits(v, s, e) ((v >> x) & ((1UL << (e-s+1)) - 1))
-#define get_field(reg, mask) (((reg) & (decltype(reg))(mask)) / ((mask) & ~((mask) << 1)))
-#define set_field(reg, mask, val) (((reg) & ~(decltype(reg))(mask)) | (((decltype(reg))(val) * ((mask) & ~((mask) << 1))) & (decltype(reg))(mask)))
-
 // opcode mask
 #define OP_MASK       (((1UL << 2) - 1) << 0)
 #define OP_16_C0      0UL
@@ -33,6 +27,13 @@
 typedef uint64_t rv_inst;
 
 #include "masker_enum.h"
+
+class masker_inst_t;
+
+rv_format decode_inst_format(rv_opcode op);
+void decode_inst_opcode(masker_inst_t* dec);
+void decode_inst_oprand(masker_inst_t* dec);
+
 
 class field_t {
 public:
@@ -72,17 +73,22 @@ public:
     for (auto arg : args)
       new_inst = arg->encode(new_inst);
 
-    if (debug)
-      printf("\e[1;35m[CJ] insn mutation: [%s] %016lx @ %08lx -> %08lx\e[0m\n", 
-                                           rv_opcode_name[op], pc, inst, new_inst);
+    if (debug) {
+      masker_inst_t tmp(new_inst, rv64, pc);
+      decode_inst_opcode(&tmp);
+      printf("\e[1;35m[CJ] insn mutation:  %016lx @ %08lx -> %08lx [%s] \e[0m\n", pc, inst, new_inst, rv_opcode_name[tmp.op]);
+    }
+      
 
     return new_inst;
   }
 
   void mutation(bool debug=false) {
+    if (debug)
+      printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx\n", rv_opcode_name[op], inst);
     for (auto arg : args) {
       if (debug) {
-        printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx ->", rv_field_name[arg->name], arg->value);
+        printf("\e[1;35m[CJ] insn mutation:  \t%s @ %08lx ->", rv_field_name[arg->name], arg->value);
       }
       arg->value ++;
       if (debug) {
@@ -92,9 +98,5 @@ public:
   }
 
 };
-
-rv_format decode_inst_format(rv_opcode op);
-void decode_inst_opcode(masker_inst_t* dec);
-void decode_inst_oprand(masker_inst_t* dec);
 
 #endif

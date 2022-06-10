@@ -17,7 +17,7 @@ inline bool operator!=(const float128_t& lhs, const float128_t& rhs) {
 }
 
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
-  tohost_addr(0), tohost_data(0),
+  finish(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
   isa_parser_t isa(cfg.isa(), cfg.priv());
   std::ostream sout_(nullptr);
@@ -144,12 +144,11 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   memif_t tmp(this);
   reg_t elf_entry;
   std::map<std::string, uint64_t> symbols = load_elf(cfg.elffile(), &tmp, &elf_entry);
-  if (symbols.count("tohost")) {
+  if (symbols.count("tohost"))
     tohost_addr = symbols["tohost"];
-  } else {
+  else
     fprintf(stderr, "warning: tohost symbols not in ELF; can't communicate with target\n");
-  }
-
+  
   for (auto i : symbols) {
     auto it = addr2symbol.find(i.second);
     if ( it == addr2symbol.end())
@@ -223,15 +222,16 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   if (!start_randomize && dut_insn == 0x00002013UL) {
     printf("[CJ] Enable insn randomization\n");
     start_randomize = true;
-    mmu->set_insn_rdm(start_randomize);
   } else if (start_randomize && dut_insn == 0xfff02013UL) {
     printf("[CJ] Disable insn randomization\n");
     start_randomize = false;
-    mmu->set_insn_rdm(start_randomize);
   }
 
-  if (start_randomize) {
-    mmu->set_dut_insn(dut_insn);
+  printf("[CJ] mutation condition: %d %016lx %016lx %016lx\n", 
+          start_randomize, s->pc, fuzz_start_addr, fuzz_end_addr);
+
+  if (start_randomize && (s->pc <= fuzz_end_addr && s->pc >= fuzz_start_addr)) {
+    mmu->set_insn_rdm(start_randomize);
   }
 
   do {
@@ -241,6 +241,8 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   // update tohost
   auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
   memcpy(&tohost_data, &data, sizeof data);
+  printf("tohost: %016lx\n", tohost_data);
+  update_tohost_info();
 
   if (!check)
     return 0;
@@ -300,12 +302,12 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
 
   if (in == 0x00002013UL || in == 0xfff02013UL) {
     return in;
-  } else if (start_randomize) {
+  } else if (start_randomize && (pc <= fuzz_end_addr && pc >= fuzz_start_addr)) {
     masker_inst_t insn(in, rv64, pc);
     decode_inst_opcode(&insn);
     decode_inst_oprand(&insn);
     insn.mutation(true);
-    rv_inst enc = insn.encode();
+    rv_inst enc = insn.encode(true);
     return enc;
   } else {
    return in;

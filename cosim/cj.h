@@ -103,10 +103,24 @@ class cosim_cj_t : simif_t, chunked_memif_t {
   memif_endianness_t get_target_endianness() const;
 
   processor_t* get_core(size_t i) { return procs.at(i); }
-  reg_t get_tohost() { return tohost_data; };
+  reg_t get_finish() { return finish; };
 
   checkboard_t<reg_t, NXPR, true> check_board;
   checkboard_t<freg_t, NFPR, false> f_check_board;
+
+  void update_tohost_info() {
+      if ((tohost_data & 0xff) == 0x02) {
+        fuzz_start_addr = (int64_t)tohost_data >> 8;
+        printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
+        debug_mmu->store_uint64(tohost_addr, 0);
+      } else if ((tohost_data & 0xff) == 0x12) {
+        fuzz_end_addr = (int64_t)tohost_data >> 8;
+        printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);
+        debug_mmu->store_uint64(tohost_addr, 0);       
+      } else if (tohost_data & 1) {
+        finish = true;
+      }
+  }
 private:
   std::vector<std::pair<reg_t, mem_t*>> mems;
   mmu_t* debug_mmu;
@@ -119,7 +133,11 @@ private:
   std::unique_ptr<clint_t> clint;
   bus_t bus;
 
+
+  bool finish;
   addr_t tohost_addr;
+  addr_t fuzz_start_addr;
+  addr_t fuzz_end_addr;
   reg_t tohost_data;
   std::map<uint64_t, std::string> addr2symbol;
 

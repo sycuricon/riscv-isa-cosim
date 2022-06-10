@@ -13,6 +13,7 @@
 #include "byteorder.h"
 #include <stdlib.h>
 #include <vector>
+#include "masker.h"
 
 // virtual memory configuration
 #define PGSHIFT 12
@@ -337,15 +338,22 @@ public:
       insn |= (insn_bits_t)from_le(*(const uint16_t*)translate_insn_addr_to_host(addr + 2)) << 16;
     }
 
-    if (enable_insn_rdm) {
-      printf("\e[1;33m[CJ] insn randomize: %016lx @ %08lx -> %08lx\e[0m\n", addr, insn, dut_insn);
-      if (((insn_length(insn) > 2)  && ((insn&0x7f) == (dut_insn&0x7f))) ||
-          ((insn_length(insn) == 2) && (insn&0xe003) == (dut_insn&0xe003))) {
-        insn = dut_insn;
-      } else {
-        printf("[CJ] Exit, randomized instruction has an unmatching opcode\n");
-        exit(10000);
-      }
+    if (enable_insn_rdm && (insn != 0x00002013UL && insn != 0xfff02013UL)) {
+      enable_insn_rdm = false;
+      masker_inst_t rdm_insn(insn, rv64, addr);
+      decode_inst_opcode(&rdm_insn);
+      decode_inst_oprand(&rdm_insn);
+      rdm_insn.mutation();
+      insn = rdm_insn.encode();
+
+      printf("\e[1;33m[CJ] insn randomize: %016lx @ %08lx -> %08lx\e[0m\n", addr, rdm_insn.inst, insn);
+      // insn = dut_insn;
+      // if (((insn_length(insn) > 2)  && ((insn&0x7f) == (dut_insn&0x7f))) ||
+      //     ((insn_length(insn) == 2) && (insn&0xe003) == (dut_insn&0xe003))) {
+      // } else {
+      //   printf("[CJ] Exit, randomized instruction has an unmatching opcode\n");
+      //   exit(10000);
+      // }
     }
 
     insn_fetch_t fetch = {proc->decode_insn(insn), insn};
