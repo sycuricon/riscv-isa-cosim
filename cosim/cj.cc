@@ -8,14 +8,6 @@
 #include <cstdio>
 #include <sstream>
 
-inline bool operator==(const float128_t& lhs, const float128_t& rhs) {
-  return (lhs.v[0] == rhs.v[0]) && (lhs.v[1] == rhs.v[1]);
-}
-
-inline bool operator!=(const float128_t& lhs, const float128_t& rhs) {
-  return (lhs.v[0] != rhs.v[0]) || (lhs.v[1] != rhs.v[1]);
-}
-
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
   finish(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
@@ -196,6 +188,8 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   boot_rom.reset(new rom_device_t(rom));
   bus.add_device(DEFAULT_RSTVEC, boot_rom.get());
 
+  magic.reset(new magic_t());
+  bus.add_device(0, magic.get());
 
  // done
   fprintf(stderr, "[*] `Commit & Judge' General Co-simulation Framework\n");
@@ -241,7 +235,6 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   // update tohost
   auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
   memcpy(&tohost_data, &data, sizeof data);
-  printf("tohost: %016lx\n", tohost_data);
   update_tohost_info();
 
   if (!check)
@@ -252,13 +245,13 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   size_t regNo, fregNo;
   if (s->XPR.get_last_write(regNo)) {
 //    printf("write back: %016lx\n", s->XPR[regNo]);
-    if (check_board.set(regNo, s->XPR[regNo]) != 0) {
+    if (!check_board.set(regNo, s->XPR[regNo], dut_insn)) {
       printf("\x1b[31m[error] check board set %ld error \x1b[0m\n", regNo);
       return 10;
     }
   }
   if (s->FPR.get_last_write(fregNo)) {
-    if (f_check_board.set(fregNo, s->FPR[fregNo])) {
+    if (!f_check_board.set(fregNo, s->FPR[fregNo], dut_insn)) {
       printf("\x1b[31m[error] float check board set %ld error \x1b[0m\n", fregNo);
       return 10;
     }
@@ -278,14 +271,30 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
   state_t* s = p->get_state();
 
   if (fc) {
-    if (f_check_board.clear(dut_waddr, freg(f64(dut_wdata))) != 0) {
-      printf("\x1b[31m[error] float check board check %d error \x1b[0m\n", dut_waddr);
-      return 10;
+    if (!f_check_board.clear(dut_waddr, freg(f64(dut_wdata)))) {
+      if (magic->get_ignore() && ((f_check_board.get_insn(dut_waddr) & 0x7f) == 0x07)) {
+        s->FPR.write(dut_waddr, freg(f64(dut_wdata)));
+        magic->clear_ignore();
+        f_check_board.clear(dut_waddr);
+        return 0;
+      } else {
+        printf("\x1b[31m[error] float check board check %d error \x1b[0m\n", dut_waddr);
+        return 10;
+      }
+
     }
   } else {
-    if (check_board.clear(dut_waddr, dut_wdata) != 0) {
-      printf("\x1b[31m[error] check board clear %d error \x1b[0m\n", dut_waddr);
-      return 10;
+    if (!check_board.clear(dut_waddr, dut_wdata)) {
+      if (magic->get_ignore() && ((check_board.get_insn(dut_waddr) & 0x7f) == 0x03)) {
+        s->XPR.write(dut_waddr, dut_wdata);
+        magic->clear_ignore();
+        check_board.clear(dut_waddr);
+        return 0;
+      } else {
+        printf("\x1b[31m[error] check board clear %d error \x1b[0m\n", dut_waddr);
+        return 10;
+      }
+
     }
   }
 
