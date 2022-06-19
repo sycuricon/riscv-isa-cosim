@@ -95,6 +95,9 @@ class cosim_cj_t : simif_t, chunked_memif_t {
   cosim_cj_t(config_t& cfg);
   ~cosim_cj_t();
 
+  void load_testcase(const char* elffile);
+
+  // dpi
   int cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, bool check);
   int cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bool fc);
   void cosim_raise_trap(int hartid, reg_t cause);
@@ -138,6 +141,7 @@ private:
   mmu_t* debug_mmu;
   std::vector<processor_t*> procs;
   reg_t start_pc;
+  reg_t elf_entry;
   std::string dts;
   std::string dtb;
   std::string dtb_file;

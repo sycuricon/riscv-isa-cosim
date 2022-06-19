@@ -133,19 +133,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     std::cerr << "At least one testcase is required!\n";
     exit(1);
   }
-  memif_t tmp(this);
-  reg_t elf_entry;
-  std::map<std::string, uint64_t> symbols = load_elf(cfg.elffile(), &tmp, &elf_entry);
-  if (symbols.count("tohost"))
-    tohost_addr = symbols["tohost"];
-  else
-    fprintf(stderr, "warning: tohost symbols not in ELF; can't communicate with target\n");
-  
-  for (auto i : symbols) {
-    auto it = addr2symbol.find(i.second);
-    if ( it == addr2symbol.end())
-      addr2symbol[i.second] = i.first;
-  }
+  load_testcase(cfg.elffile());
 
   // create bootrom
   const int reset_vec_size = 8;
@@ -208,6 +196,23 @@ cosim_cj_t::~cosim_cj_t() {
   delete debug_mmu;
 }
 
+void cosim_cj_t::load_testcase(const char* elffile) {
+  // mems[0].second->reset();
+  memif_t tmp(this);
+  std::map<std::string, uint64_t> symbols = load_elf(elffile, &tmp, &elf_entry);
+  if (symbols.count("tohost"))
+    tohost_addr = symbols["tohost"];
+  else
+    fprintf(stderr, "warning: tohost symbols not in ELF; can't communicate with target\n");
+  
+  for (auto i : symbols) {
+    auto it = addr2symbol.find(i.second);
+    if ( it == addr2symbol.end())
+      addr2symbol[i.second] = i.first;
+  }
+}
+
+
 int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, bool check) {
   processor_t* p = get_core(hartid);
   state_t* s = p->get_state();
@@ -221,8 +226,8 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
     start_randomize = false;
   }
 
-  printf("[CJ] mutation condition: %d %016lx %016lx %016lx\n", 
-          start_randomize, s->pc, fuzz_start_addr, fuzz_end_addr);
+  // printf("[CJ] mutation condition: %d %016lx %016lx %016lx\n", 
+          // start_randomize, s->pc, fuzz_start_addr, fuzz_end_addr);
 
   if (start_randomize && (s->pc <= fuzz_end_addr && s->pc >= fuzz_start_addr)) {
     mmu->set_insn_rdm(start_randomize);
@@ -285,11 +290,15 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
     }
   } else {
     if (!check_board.clear(dut_waddr, dut_wdata)) {
-      if (magic->get_ignore() && ((check_board.get_insn(dut_waddr) & 0x7f) == 0x03)) {
+      if (magic->get_ignore() && ( ((check_board.get_insn(dut_waddr) & 0x7f) == 0x03) ||
+                                   ((check_board.get_insn(dut_waddr) & 0x7f) == 0x2f) )) {
         s->XPR.write(dut_waddr, dut_wdata);
         magic->clear_ignore();
         check_board.clear(dut_waddr);
         return 0;
+      } else if ((check_board.get_insn(dut_waddr) & 0x7f) == 0x73) {
+        s->XPR.write(dut_waddr, dut_wdata);
+        check_board.clear(dut_waddr);
       } else {
         printf("\x1b[31m[error] check board clear %d error \x1b[0m\n", dut_waddr);
         return 10;
