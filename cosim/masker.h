@@ -4,7 +4,9 @@
 #include <cstdlib>
 #include <cstdint>
 #include <vector>
+#include <random>
 #include <iostream>
+#include <unordered_map>
 
 // opcode mask
 #define OP_MASK       (((1UL << 2) - 1) << 0)
@@ -79,24 +81,20 @@ public:
       printf("\e[1;35m[CJ] insn mutation:  %016lx @ %08lx -> %08lx [%s] \e[0m\n", pc, inst, new_inst, rv_opcode_name[tmp.op]);
     }
       
-
+    history[pc] = new_inst;
     return new_inst;
   }
 
-  void mutation(bool debug=false) {
-    if (debug)
-      printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx\n", rv_opcode_name[op], inst);
-    for (auto arg : args) {
-      if (debug) {
-        printf("\e[1;35m[CJ] insn mutation:  \t%s @ %08lx ->", rv_field_name[arg->name], arg->value);
-      }
-      arg->value ++;
-      if (debug) {
-        printf(" %08lx\e[0m\n", arg->value);
-      }
-    }
-  }
+  void mutation(bool debug=false);
 
+  rv_inst replay_mutation(bool debug=false);
+
+private:
+  static std::default_random_engine random;
+  static std::uniform_int_distribution<uint64_t> rand2;
+  static uint64_t randInt(uint64_t a, uint64_t b);
+  static uint64_t randBits(uint64_t w);
+  static std::unordered_map<uint64_t, uint64_t> history;
 };
 
 #endif

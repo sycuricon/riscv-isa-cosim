@@ -318,6 +318,13 @@ public:
     return (addr / PC_ALIGN) % ICACHE_ENTRIES;
   }
 
+  inline int test_insn_length(reg_t addr)
+  {
+    auto tlb_entry = translate_insn_addr(addr);
+    insn_bits_t insn = from_le(*(uint16_t*)(tlb_entry.host_offset + addr));
+    return insn_length(insn);
+  }
+
   inline icache_entry_t* refill_icache(reg_t addr, icache_entry_t* entry)
   {
     auto tlb_entry = translate_insn_addr(addr);
@@ -341,10 +348,15 @@ public:
     if (enable_insn_rdm && (insn != 0x00002013UL && insn != 0xfff02013UL)) {
       enable_insn_rdm = false;
       masker_inst_t rdm_insn(insn, rv64, addr);
+      /*
       decode_inst_opcode(&rdm_insn);
       decode_inst_oprand(&rdm_insn);
       rdm_insn.mutation();
       insn = rdm_insn.encode();
+      */
+      insn = rdm_insn.replay_mutation(true);
+      int high = 64 - length * 8;
+      insn = (((int64_t)insn) << high) >> high;
 
       printf("\e[1;33m[CJ] insn randomize: %016lx @ %08lx -> %08lx\e[0m\n", addr, rdm_insn.inst, insn);
       // insn = dut_insn;
@@ -355,7 +367,7 @@ public:
       //   exit(10000);
       // }
     }
-
+    
     insn_fetch_t fetch = {proc->decode_insn(insn), insn};
     entry->tag = addr;
     entry->next = &icache[icache_index(addr + length)];

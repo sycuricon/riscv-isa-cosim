@@ -542,3 +542,183 @@ void decode_inst_oprand(masker_inst_t* dec) {
 
   dec->decode();
 }
+
+
+
+void masker_inst_t::mutation(bool debug) {
+  if (debug)
+    printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx\n", rv_opcode_name[op], inst);
+  for (auto arg : args) {
+    if (debug) {
+      printf("\e[1;35m[CJ] insn mutation:  \t%s @ %08lx ->", rv_field_name[arg->name], arg->value);
+    }
+
+    switch (arg->name) {
+      // functions
+      case rv_field_funct3: 
+      case rv_field_funct7:
+      case rv_field_funct5:
+      case rv_field_funct2:
+      case rv_field_c_funct3:
+      case rv_field_c_funct1:
+        // do nothing
+        break;
+
+      // registers
+      case rv_field_rd:
+      case rv_field_rs1:
+      case rv_field_rs2:
+      case rv_field_rs3:
+      case rv_field_c_rs1:
+      case rv_field_c_rs2:
+        arg->value = randBits(5);
+        break;
+      case rv_field_c_rs1p:
+      case rv_field_c_rs2p:
+        arg->value = randBits(3);
+        break;
+
+      // fence
+      case rv_field_fm:
+        if (rand2(random)) { // legal
+          if (rand2(random)) // flip
+            arg->value ^= 0x8;
+        }
+        else           // illegal
+          arg->value = randBits(4);
+        break;
+
+      // fence RWIO
+      case rv_field_pred:
+      case rv_field_succ:
+        arg->value ^= randBits(4);
+        break;
+
+      // FCVT
+      case rv_field_rm:
+        switch(op) {
+          case rv_op_fmv_d_x:
+          case rv_op_fmv_q_x:
+          case rv_op_fmv_w_x:
+          case rv_op_fmv_x_d:
+          case rv_op_fmv_x_q:
+          case rv_op_fmv_x_w:
+            if (rand2(random))
+              arg->value = randBits(3);
+            break;
+          default:
+            arg->value = randBits(3);
+        }
+        break;
+
+      // AMO
+      case rv_field_aq:
+      case rv_field_rl:
+        if (rand2(random))
+          arg->value = !arg->value;
+        break;
+      
+      case rv_field_imm_u:
+        arg->value = randBits(20) << 12;
+        break;
+      case rv_field_imm_j:
+        arg->value = randBits(20) << 1;
+        break;
+      case rv_field_imm_i:
+      case rv_field_imm_s:
+          arg->value = randBits(12);
+        break;
+      case rv_field_imm_b:
+        arg->value = randBits(12) << 1;
+        break;
+
+      case rv_field_cls_uimm6:
+        arg->value = randBits(5) << 2;
+        break;
+      case rv_field_cls_uimm7:
+        arg->value = randBits(5) << 3;
+        break;
+      case rv_field_cls_uimm8:
+        arg->value = randBits(5) << 4;
+        break;
+      case rv_field_ciw_uimm9:
+        arg->value = randBits(8) << 2;
+        break;
+      case rv_field_cb_imm8:
+        arg->value = randBits(8) << 1;
+        break;
+      case rv_field_cj_imm11:
+        arg->value = randBits(11) << 1;
+        break;
+      case rv_field_ci_imm5:
+        arg->value = randBits(6);
+        break;
+      case rv_field_ci_imm9:
+        arg->value = randBits(6) << 4;
+        break;
+      case rv_field_ci_imm17:
+        arg->value = randBits(6) << 12;
+        break;
+      case rv_field_ci_uimm5:
+        arg->value = randBits(6);
+        break;
+      case rv_field_ci_uimm7:
+        arg->value = randBits(6) << 2;
+        break;
+      case rv_field_ci_uimm8:
+        arg->value = randBits(6) << 3;
+        break;
+      case rv_field_ci_uimm9:
+        arg->value = randBits(6) << 4;
+        break;
+      case rv_field_css_uimm7:
+        arg->value = randBits(6) << 2;
+        break;
+      case rv_field_css_uimm8:
+        arg->value = randBits(6) << 3;
+        break;
+      case rv_field_css_uimm9:
+        arg->value = randBits(6) << 4;
+        break;
+
+      case rv_field_csr:
+        // do nothing
+        break;
+
+      case rv_field_shamt_imm:
+      case rv_field_shamt_funct:
+        arg->value = randBits(5) << 1;
+        break;
+
+      default:
+        arg->value ++;
+    }
+
+    if (debug) {
+      printf(" %08lx\e[0m\n", arg->value);
+    }
+  }
+}
+
+rv_inst masker_inst_t::replay_mutation(bool debug) {
+  if (debug) {
+    printf("\e[1;33m[CJ] Replay Mutation %016lx \e[0m\n", pc);
+  }
+  auto res = history[pc];
+  history.erase(pc);
+  return res;
+}
+
+uint64_t masker_inst_t::randInt(uint64_t a, uint64_t b) {
+  std::uniform_int_distribution<uint64_t> r(a, b);
+  return r(random);
+}
+
+uint64_t masker_inst_t::randBits(uint64_t w) {
+  std::uniform_int_distribution<uint64_t> r(0, w == 64 ? -1LL : (1LL << w) - 1);
+  return r(random);
+}
+
+std::default_random_engine masker_inst_t::random;
+std::uniform_int_distribution<uint64_t> masker_inst_t::rand2(0, 1);
+std::unordered_map<uint64_t, uint64_t> masker_inst_t::history;
