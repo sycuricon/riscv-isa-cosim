@@ -8,6 +8,9 @@
 #include "simif.h"
 #include "memif.h"
 #include "devices.h"
+#include "functional"
+#include "random"
+#include "queue"
 
 #include "masker.h"
 
@@ -102,6 +105,7 @@ class cosim_cj_t : simif_t, chunked_memif_t {
   int cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bool fc);
   void cosim_raise_trap(int hartid, reg_t cause);
   uint64_t cosim_randomizer_insn(uint64_t in, uint64_t pc);
+  uint64_t cosim_randomizer_data(unsigned int read_select);
 
   // simif_t virtual function
   char* addr_to_mem(reg_t addr);
@@ -109,6 +113,11 @@ class cosim_cj_t : simif_t, chunked_memif_t {
   bool mmio_store(reg_t addr, size_t len, const uint8_t* bytes);
   void proc_reset(unsigned id);
   const char* get_symbol(uint64_t addr);
+
+  uint64_t get_random_executable_address(std::default_random_engine &random);
+  bool in_fuzz_range(uint64_t addr) {
+    return fuzz_start_addr <= addr && addr < fuzz_end_addr;
+  }
 
   // chunked_memif_t virtual function
   void read_chunk(addr_t taddr, size_t len, void* dst);
@@ -125,17 +134,7 @@ class cosim_cj_t : simif_t, chunked_memif_t {
   checkboard_t<reg_t, NXPR, true> check_board;
   checkboard_t<freg_t, NFPR, false> f_check_board;
 
-  void update_tohost_info() {
-      if ((tohost_data & 0xff) == 0x02) {
-        fuzz_start_addr = (int64_t)tohost_data >> 8;
-        printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
-        debug_mmu->store_uint64(tohost_addr, 0);
-      } else if ((tohost_data & 0xff) == 0x12) {
-        fuzz_end_addr = (int64_t)tohost_data >> 8;
-        printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);
-        debug_mmu->store_uint64(tohost_addr, 0);       
-      }
-  }
+  void update_tohost_info();
 private:
   std::vector<std::pair<reg_t, mem_t*>> mems;
   mmu_t* debug_mmu;
@@ -149,8 +148,7 @@ private:
   std::unique_ptr<clint_t> clint;
   std::unique_ptr<magic_t> magic;
   bus_t bus;
-
-
+  
   bool finish;
   addr_t tohost_addr;
   addr_t fuzz_start_addr;
@@ -167,23 +165,42 @@ private:
 
 class magic_t : public abstract_device_t {
  public:
-  magic_t() : seed(0), ignore(false) {}
+  magic_t(cosim_cj_t *cosim) : cosim(cosim), seed(0), ignore(false), rand2(0, 1), generator({
+    std::bind(&magic_t::rdm_dword, this, 64, 0),
+    std::bind(&magic_t::rdm_dword, this, 32, 1),
+    std::bind(&magic_t::rdm_float, this, -1, -1, 23, 31),
+    std::bind(&magic_t::rdm_float, this, -1, -1, 52, 63),
+    std::bind(&magic_t::rdm_address, this, -1, -1, -1, -1)
+  }){}
+  
   bool load(reg_t addr, size_t len, uint8_t* bytes) {
-    reg_t tmp = 0; 
+    reg_t id = addr / 8;
+    reg_t tmp = id < generator.size() ? generator[id]() : 0;
     ignore = true;
     memcpy(bytes, &tmp, len);
-    printf("[CJ] Magic read: %016lx[%ld]\n", addr, len);
+    printf("[CJ] Magic read: %016lx[%ld] = %016lx\n", addr, len, tmp);
     return true;
   }
+  
   bool store(reg_t addr, size_t len, const uint8_t* bytes) { return true; }
   size_t size() { return 4096; }
-  void set_seed(reg_t new_seed) { seed = new_seed; }
+  void set_seed(reg_t new_seed) { seed = new_seed; random.seed(seed); }
   bool get_ignore() { return ignore; }
   void clear_ignore() { ignore = false; }
+
+  reg_t rdm_dword(int width, int sgned);                    // 1 for signed, 0 for unsigned, -1 for random
+  reg_t rdm_float(int type, int sgn, int botE, int botS);   // 0 for 0, 1 for INF, 2 for qNAN, 3 for sNAN, 4 for normal, 5 for tiny, -1 for random
+  reg_t rdm_address(int r, int w, int x, int isLabel);      // 1 for yes, 0 for no, -1 for random
 
  private:
   reg_t seed;
   bool ignore;
+
+  std::unique_ptr<cosim_cj_t> cosim;
+
+  std::default_random_engine random;
+  std::uniform_int_distribution<reg_t> rand2;
+  std::vector<std::function<reg_t()>> generator;
 };
 
 

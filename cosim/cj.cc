@@ -176,7 +176,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   boot_rom.reset(new rom_device_t(rom));
   bus.add_device(DEFAULT_RSTVEC, boot_rom.get());
 
-  magic.reset(new magic_t());
+  magic.reset(new magic_t(this));
   bus.add_device(0, magic.get());
 
  // done
@@ -317,7 +317,6 @@ void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
   p->pending_intrpt = true;
 }
 uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
-
   if (in == 0x00002013UL || in == 0xfff02013UL) {
     return in;
   } else if (start_randomize && (pc <= fuzz_end_addr && pc >= fuzz_start_addr)) {
@@ -331,7 +330,40 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
    return in;
   }
 }
-
+uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
+  uint64_t buf;
+  if (read_select == 0x28) {   // step to next inst
+      processor_t* p = get_core(0);
+      auto mepc = p->get_csr(CSR_MEPC);
+      if (in_fuzz_range(mepc)) {  // step to the next inst
+        int step = p->mmu->test_insn_length(mepc);
+        printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
+        return mepc + step;
+      } else { // load a randomly selected target
+        printf("[CJ] mepc %016lx out of fuzz range\n", mepc);
+        magic->load(32, 8, (uint8_t*)(&buf));
+        return buf;
+      }
+  } else {
+      magic->load(read_select, 8, (uint8_t*)(&buf));
+      return buf;
+  }
+}
+void cosim_cj_t::update_tohost_info() {
+  // tohost_addr = 0x80001000
+  switch (tohost_data & 0xff) {
+    case 0x02:
+      fuzz_start_addr = (int64_t)tohost_data >> 8;
+      printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
+      debug_mmu->store_uint64(tohost_addr, 0);
+      break;
+    case 0x12:
+      fuzz_end_addr = (int64_t)tohost_data >> 8;
+      printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);
+      debug_mmu->store_uint64(tohost_addr, 0);       
+      break;
+  }
+}
 
 
 // chunked_memif_t virtual function
@@ -402,6 +434,57 @@ const char* cosim_cj_t::get_symbol(uint64_t addr) {
     return nullptr;
   return it->second.c_str();
 }
+
+uint64_t cosim_cj_t::get_random_executable_address(std::default_random_engine &random) {
+  std::vector<uint64_t> legal;
+  for (auto &p : addr2symbol) {
+    if (in_fuzz_range(p.first)) legal.push_back(p.first);
+  }
+
+  std::uniform_int_distribution<uint64_t> rand(0, legal.size() - 1);
+  auto select = legal[rand(random)];
+  printf("[CJ] gnerated random label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
+  return select;
+}
+
+
+
+reg_t magic_t::rdm_dword(int width, int sgned) { // 1 for signed, 0 for unsigned, -1 for random
+  std::uniform_int_distribution<reg_t> rand(0, (reg_t)(-1));
+  reg_t mask = width == 64 ? -1 : (1LL << width)-1;
+  reg_t masked_val = rand(random) & mask;
+  bool sgn_ext = (sgned == -1) ? rand2(random) : sgned;
+  if ((masked_val >> (width - 1)) & sgn_ext)
+    masked_val |= ~mask;
+  return  masked_val;
+}
+
+reg_t magic_t::rdm_float(int type, int sgn, int botE, int botS) {   // 0 for 0, 1 for INF, 2 for qNAN, 3 for sNAN, 4 for normal, 5 for tiny, -1 for random
+  int topT = botE - 1;
+  std::uniform_int_distribution<reg_t> randType(0, 5);
+  std::uniform_int_distribution<reg_t> randE(1, (1 << (botS - botE)) - 2);
+  std::uniform_int_distribution<reg_t> randT(1, (1 << botE)-1);
+  std::uniform_int_distribution<reg_t> randS(0, (1 << topT)-1);
+
+  reg_t base = botS == 63 ? 0 : (-1LL) << (botS + 1);
+  reg_t sgn_bit = (sgn == -1 ? rand2(random) : (reg_t)sgn) << botS;
+  type = (type == -1) ? randType(random) : type;
+  switch (type) {
+    case 0: return base | sgn_bit | 0;
+    case 1: return base | sgn_bit | (255 << botE) | 0;
+    case 2: return base | sgn_bit | (255 << botE) | (randS(random) |  (1 << topT));
+    case 3: return base | sgn_bit | (255 << botE) | (randT(random) & ~(1 << topT));
+    case 4: return base | sgn_bit | (randE(random) << botE) | (rand2(random) << topT) | randS(random);
+    case 5: return base | sgn_bit |   (0 << botE) | randT(random);
+    default: return 0;
+  }
+}
+
+reg_t magic_t::rdm_address(int r, int w, int x, int isLabel) {  // 1 for yes, 0 for no, -1 for random
+  return cosim->get_random_executable_address(random);
+}
+
+
 
 //__attribute__((weak)) int main() {
 //  printf("Hello v0.3\n");
