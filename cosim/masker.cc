@@ -1,4 +1,5 @@
 #include "masker.h"
+#include "cj.h"
 #include "masker_insn_fields.h"
 
 void decode_inst_opcode(masker_inst_t* dec) {
@@ -631,8 +632,11 @@ void masker_inst_t::mutation(bool debug) {
       case rv_field_imm_s:
           arg->value = randBits(12);
         break;
+      
+      // imm_b is used for branch instruction
+      // so should be given a valid exec addr
       case rv_field_imm_b:
-        arg->value = randBits(12) << 1;
+        arg->value = cosim_cj_t::simulator->get_random_executable_address(random);
         break;
 
       case rv_field_cls_uimm6:
