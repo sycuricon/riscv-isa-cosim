@@ -65,29 +65,11 @@ public:
       arg->decode(inst);
   }
 
-  rv_inst encode(bool debug=false) {
-    rv_inst new_inst;
-    if ((inst & OP_MASK) == OP_32)
-      new_inst = inst & 0x7f;
-    else
-      new_inst = inst & OP_MASK;
-
-    for (auto arg : args)
-      new_inst = arg->encode(new_inst);
-
-    if (debug) {
-      masker_inst_t tmp(new_inst, rv64, pc);
-      decode_inst_opcode(&tmp);
-      printf("\e[1;35m[CJ] insn mutation:  %016lx @ %08lx -> %08lx [%s] \e[0m\n", pc, inst, new_inst, rv_opcode_name[tmp.op]);
-    }
-      
-    history[pc] = new_inst;
-    return new_inst;
-  }
-
+  rv_inst encode(bool debug=false);
   void mutation(bool debug=false);
-
   rv_inst replay_mutation(bool debug=false);
+
+  static void reset_mutation_history();
 
 private:
   static std::default_random_engine random;

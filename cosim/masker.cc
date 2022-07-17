@@ -546,6 +546,9 @@ void decode_inst_oprand(masker_inst_t* dec) {
 
 
 void masker_inst_t::mutation(bool debug) {
+  if (history.find(pc) != history.end())  // already mutated
+    return;
+
   if (debug)
     printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx\n", rv_opcode_name[op], inst);
   for (auto arg : args) {
@@ -700,13 +703,37 @@ void masker_inst_t::mutation(bool debug) {
   }
 }
 
-rv_inst masker_inst_t::replay_mutation(bool debug) {
-  if (debug) {
-    printf("\e[1;33m[CJ] Replay Mutation %016lx \e[0m\n", pc);
+rv_inst masker_inst_t::encode(bool debug) {
+    rv_inst new_inst;
+    if (history.find(pc) != history.end())
+      return replay_mutation(debug);
+
+    if ((inst & OP_MASK) == OP_32)
+      new_inst = inst & 0x7f;
+    else
+      new_inst = inst & OP_MASK;
+
+    for (auto arg : args)
+      new_inst = arg->encode(new_inst);
+
+    if (debug) {
+      masker_inst_t tmp(new_inst, rv64, pc);
+      decode_inst_opcode(&tmp);
+      printf("\e[1;35m[CJ] Insn mutation:  %016lx @ %08lx -> %08lx [%s] \e[0m\n", pc, inst, new_inst, rv_opcode_name[tmp.op]);
+    }
+      
+    history[pc] = new_inst;
+    return new_inst;
   }
-  auto res = history[pc];
-  history.erase(pc);
-  return res;
+
+rv_inst masker_inst_t::replay_mutation(bool debug) {
+  auto new_inst = history[pc];
+  if (debug) {
+    masker_inst_t tmp(new_inst, rv64, pc);
+    decode_inst_opcode(&tmp);
+    printf("\e[1;33m[CJ] Replay insn mutation:  %016lx @ %08lx -> %08lx [%s] \e[0m\n", pc, inst, new_inst, rv_opcode_name[tmp.op]);
+  }
+  return new_inst;
 }
 
 uint64_t masker_inst_t::randInt(uint64_t a, uint64_t b) {
@@ -717,6 +744,10 @@ uint64_t masker_inst_t::randInt(uint64_t a, uint64_t b) {
 uint64_t masker_inst_t::randBits(uint64_t w) {
   std::uniform_int_distribution<uint64_t> r(0, w == 64 ? -1LL : (1LL << w) - 1);
   return r(random);
+}
+
+void masker_inst_t::reset_mutation_history() {
+  history.clear();
 }
 
 std::default_random_engine masker_inst_t::random;

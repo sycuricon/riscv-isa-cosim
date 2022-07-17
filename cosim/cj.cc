@@ -224,6 +224,8 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   } else if (start_randomize && dut_insn == 0xfff02013UL) {
     printf("[CJ] Disable insn randomization\n");
     start_randomize = false;
+  } else if (dut_insn == 0x00102013UL) {
+    printf("\e[1;33m[CJ] Reset mutation history\e[0m\n");
   }
 
   // printf("[CJ] mutation condition: %d %016lx %016lx %016lx\n", 

@@ -348,17 +348,11 @@ public:
     if (enable_insn_rdm && (insn != 0x00002013UL && insn != 0xfff02013UL)) {
       enable_insn_rdm = false;
       masker_inst_t rdm_insn(insn, rv64, addr);
-      /*
-      decode_inst_opcode(&rdm_insn);
-      decode_inst_oprand(&rdm_insn);
-      rdm_insn.mutation();
-      insn = rdm_insn.encode();
-      */
       insn = rdm_insn.replay_mutation(true);
       int high = 64 - length * 8;
       insn = (((int64_t)insn) << high) >> high;
 
-      printf("\e[1;33m[CJ] insn randomize: %016lx @ %08lx -> %08lx\e[0m\n", addr, rdm_insn.inst, insn);
+      // printf("\e[1;33m[CJ] insn randomize: %016lx @ %08lx -> %08lx\e[0m\n", addr, rdm_insn.inst, insn);
       // insn = dut_insn;
       // if (((insn_length(insn) > 2)  && ((insn&0x7f) == (dut_insn&0x7f))) ||
       //     ((insn_length(insn) == 2) && (insn&0xe003) == (dut_insn&0xe003))) {
