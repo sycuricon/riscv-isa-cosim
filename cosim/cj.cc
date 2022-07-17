@@ -8,9 +8,14 @@
 #include <cstdio>
 #include <sstream>
 
+cosim_cj_t* cosim_cj_t::simulator = NULL;
+
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
   finish(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
+  
+  simulator = this;
+
   isa_parser_t isa(cfg.isa(), cfg.priv());
   std::ostream sout_(nullptr);
   sout_.rdbuf(std::cerr.rdbuf());
@@ -176,7 +181,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   boot_rom.reset(new rom_device_t(rom));
   bus.add_device(DEFAULT_RSTVEC, boot_rom.get());
 
-  magic.reset(new magic_t(this));
+  magic.reset(new magic_t());
   bus.add_device(0, magic.get());
 
  // done
@@ -483,7 +488,7 @@ reg_t magic_t::rdm_float(int type, int sgn, int botE, int botS) {   // 0 for 0, 
 }
 
 reg_t magic_t::rdm_address(int r, int w, int x, int isLabel) {  // 1 for yes, 0 for no, -1 for random
-  return cosim->get_random_executable_address(random);
+  return cosim_cj_t::simulator->get_random_executable_address(random);
 }
 
 

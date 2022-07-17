@@ -94,7 +94,8 @@ private:
 class magic_t;
 
 class cosim_cj_t : simif_t, chunked_memif_t {
- public:
+public:
+  static cosim_cj_t* simulator;
   cosim_cj_t(config_t& cfg);
   ~cosim_cj_t();
 
@@ -162,10 +163,9 @@ private:
   bool start_randomize;
 };
 
-
 class magic_t : public abstract_device_t {
  public:
-  magic_t(cosim_cj_t *cosim) : cosim(cosim), seed(0), ignore(false), rand2(0, 1), generator({
+  magic_t(): seed(0), ignore(false), rand2(0, 1), generator({
     std::bind(&magic_t::rdm_dword, this, 64, 0),
     std::bind(&magic_t::rdm_dword, this, 32, 1),
     std::bind(&magic_t::rdm_float, this, -1, -1, 23, 31),
@@ -195,8 +195,6 @@ class magic_t : public abstract_device_t {
  private:
   reg_t seed;
   bool ignore;
-
-  std::unique_ptr<cosim_cj_t> cosim;
 
   std::default_random_engine random;
   std::uniform_int_distribution<reg_t> rand2;

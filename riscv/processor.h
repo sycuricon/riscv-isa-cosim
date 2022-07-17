@@ -407,7 +407,7 @@ public:
             reg_t mask = ~((1 << (cto(tdata2)+1)) - 1);
             if ((value & mask) != (tdata2 & mask))
               continue;
-            else if ((value & ~mask) >= (1 << state.mcontrol[i].maskmax))
+            else if ((value & ~mask) >= (1UL << state.mcontrol[i].maskmax))
               continue;
           }
           break;
