@@ -2,6 +2,8 @@
 #include "cj.h"
 #include "masker_insn_fields.h"
 
+#include <queue>
+
 void decode_inst_opcode(masker_inst_t* dec) {
   rv_xlen xlen = dec->xlen;
   rv_inst inst = dec->inst;
@@ -725,8 +727,8 @@ rv_inst masker_inst_t::encode(bool debug) {
       decode_inst_opcode(&tmp);
       printf("\e[1;35m[CJ] Insn mutation:  %016lx @ %08lx -> %08lx [%s] \e[0m\n", pc, inst, new_inst, rv_opcode_name[tmp.op]);
     }
-      
-    history[pc] = new_inst;
+
+    inst = new_inst;
     return new_inst;
   }
 
@@ -750,10 +752,77 @@ uint64_t masker_inst_t::randBits(uint64_t w) {
   return r(random);
 }
 
+void masker_inst_t::record_to_history() {
+  history[pc] = inst;
+  
+  int rd = 0;           bool has_rd = false;
+  int rs1 = 0;          bool has_rs1 = false;
+  int64_t imm = 0;      bool has_imm = false;
+  for (auto &arg : args)
+    if (arg->name == rv_field_rd) {
+      rd = arg->value;
+      has_rd = true;
+    } else if (arg->name == rv_field_rs1) {
+      rs1 = arg->value;
+      has_rs1 = true;
+    } else if (arg->name == rv_field_imm_i) {
+      imm = arg->value;
+      has_imm = true;
+    }
+
+  // save type
+  if (op == rv_op_ld && rs1 == 0 && rd != 0) {  // ld
+    int64_t id = imm / 8;
+    if (0 <= id && id < magic_generator_type.size())
+      type[rd] = magic_generator_type[id];
+    else
+      type[rd] = &magic_void;
+  }  
+
+  // save rd
+  rd_in_pipeline.push(rd);
+  rd_in_pipeline.pop();
+}
+
 void masker_inst_t::reset_mutation_history() {
   history.clear();
+  rd_in_pipeline.clear();
 }
 
 std::default_random_engine masker_inst_t::random;
 std::uniform_int_distribution<uint64_t> masker_inst_t::rand2(0, 1);
 std::unordered_map<uint64_t, uint64_t> masker_inst_t::history;
+circular_queue<int, 16> masker_inst_t::rd_in_pipeline;
+magic_type *masker_inst_t::type[32];
+
+
+
+
+magic_type::magic_type() {
+}
+
+magic_type::magic_type(std::vector<magic_type*> parents) :
+  parents(parents)
+{
+  for (auto &p : parents)
+    p->children.push_back(this);
+}
+
+bool magic_type::is_child_of(magic_type *b) {
+  std::queue<magic_type*> q;
+  q.push(this);
+  while (!q.empty()) {
+    auto a = q.front(); q.pop();
+    if (a == b) return true;
+    for (auto &p : parents)
+      q.push(p);
+  }
+  return false;
+}
+
+magic_type magic_void;
+magic_type magic_int({&magic_void});
+magic_type magic_float({&magic_void});
+magic_type magic_zero({&magic_int, &magic_float});
+magic_type magic_address({&magic_void});
+magic_type magic_fuzz_address({&magic_address});

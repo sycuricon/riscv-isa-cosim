@@ -7,6 +7,7 @@
 #include <random>
 #include <iostream>
 #include <unordered_map>
+#include <list>
 
 // opcode mask
 #define OP_MASK       (((1UL << 2) - 1) << 0)
@@ -29,6 +30,7 @@
 typedef uint64_t rv_inst;
 
 #include "masker_enum.h"
+#include "magic_type.h"
 
 class masker_inst_t;
 
@@ -49,6 +51,38 @@ public:
   virtual rv_inst encode(rv_inst inst) = 0;
 };
 
+template<class T, int capacity>
+class circular_queue {
+public:
+  size_t size() {
+    int t = tail - head;
+    if (t < 0) t += capacity;
+    return t;
+  }
+  void push(const T &v) {
+    arr[tail++] = v;
+    if (tail >= capacity) tail -= capacity;
+  }
+  T& front() {
+    return arr[head];
+  }
+  void pop() {
+    head++;
+    if (head >= capacity) head -= capacity;
+  }
+  T& operator[](size_t i) {
+    int t = i + head;
+    if (i >= capacity) i -= capacity;
+    return arr[i];
+  } 
+  void clear() {
+    head = tail = 0;
+  }
+private:
+  int head, tail;
+  T arr[capacity];
+};
+
 class masker_inst_t {
 public:
   uint64_t  pc;
@@ -58,7 +92,16 @@ public:
   std::vector<field_t*> args;
 
   masker_inst_t(rv_inst inst, rv_xlen xlen, uint64_t pc) :
-    pc(pc), xlen(xlen), inst(inst) {}
+    pc(pc), xlen(xlen), inst(inst)
+  {
+    type[0] = &magic_zero;
+    for (int i = 1; i <= 31; i++)
+      type[i] = &magic_void;
+
+    for (int i = 0; i < 5; i++) {
+      rd_in_pipeline.push(0);
+    }
+  }
 
   void decode() {
     for (auto arg : args)
@@ -70,13 +113,18 @@ public:
   rv_inst replay_mutation(bool debug=false);
 
   static void reset_mutation_history();
+  void record_to_history();
 
 private:
   static std::default_random_engine random;
   static std::uniform_int_distribution<uint64_t> rand2;
   static uint64_t randInt(uint64_t a, uint64_t b);
   static uint64_t randBits(uint64_t w);
+
+
   static std::unordered_map<uint64_t, uint64_t> history;
+  static circular_queue<int, 16> rd_in_pipeline;
+  static magic_type *type[32];
 };
 
 #endif

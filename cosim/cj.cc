@@ -4,6 +4,7 @@
 #include "libfdt.h"
 #include "../VERSION"
 #include "elfloader.h"
+#include "magic_type.h"
 
 #include <cstdio>
 #include <sstream>
@@ -320,18 +321,23 @@ void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
   p->pending_intrpt = true;
 }
 uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
-  if (in == 0x00002013UL || in == 0xfff02013UL) {
-    return in;
+  masker_inst_t insn(in, rv64, pc);
+  decode_inst_opcode(&insn);
+  decode_inst_oprand(&insn);
+  
+  uint64_t new_inst;
+  // Mutate
+  if (in & 0xfffff == 0x00002013UL) {
+    new_inst = in;
   } else if (start_randomize && (pc <= fuzz_end_addr && pc >= fuzz_start_addr)) {
-    masker_inst_t insn(in, rv64, pc);
-    decode_inst_opcode(&insn);
-    decode_inst_oprand(&insn);
     insn.mutation(true);
-    rv_inst enc = insn.encode(true);
-    return enc;
+    new_inst = insn.encode(true);
   } else {
-   return in;
+    new_inst = in;
   }
+
+  insn.record_to_history();
+  return new_inst;
 }
 uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
   uint64_t buf;
@@ -487,7 +493,14 @@ reg_t magic_t::rdm_address(int r, int w, int x, int isLabel) {  // 1 for yes, 0 
   return simulator->get_random_executable_address(random);
 }
 
-
+const std::vector<magic_type*> magic_generator_type({
+  &magic_int,
+  &magic_int,
+  &magic_float,
+  &magic_float,
+  &magic_address,
+  &magic_fuzz_address,
+});
 
 //__attribute__((weak)) int main() {
 //  printf("Hello v0.3\n");

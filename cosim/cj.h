@@ -10,11 +10,9 @@
 #include "platform.h"
 #include "processor.h"
 
-#include "queue"
-#include "random"
-#include "functional"
-
-
+#include <queue>
+#include <random>
+#include <functional>
 
 
 // Using json to configure in future
@@ -164,6 +162,8 @@ private:
 
   bool start_randomize;
 };
+
+extern const std::vector<magic_type*> magic_generator_type;
 
 class magic_t : public abstract_device_t {
  public:
