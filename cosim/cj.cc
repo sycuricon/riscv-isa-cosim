@@ -1,20 +1,16 @@
 #include "cj.h"
-#include "elfloader.h"
 #include "dts.h"
-#include "libfdt.h"
 #include "mmu.h"
+#include "libfdt.h"
 #include "../VERSION"
+#include "elfloader.h"
 
 #include <cstdio>
 #include <sstream>
 
-cosim_cj_t* cosim_cj_t::simulator = NULL;
-
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
   finish(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
-  
-  simulator = this;
 
   isa_parser_t isa(cfg.isa(), cfg.priv());
   std::ostream sout_(nullptr);
@@ -488,7 +484,7 @@ reg_t magic_t::rdm_float(int type, int sgn, int botE, int botS) {   // 0 for 0, 
 }
 
 reg_t magic_t::rdm_address(int r, int w, int x, int isLabel) {  // 1 for yes, 0 for no, -1 for random
-  return cosim_cj_t::simulator->get_random_executable_address(random);
+  return simulator->get_random_executable_address(random);
 }
 
 

@@ -636,7 +636,7 @@ void masker_inst_t::mutation(bool debug) {
       // imm_b is used for branch instruction
       // so should be given a valid exec addr
       case rv_field_imm_b:
-        arg->value = cosim_cj_t::simulator->get_random_executable_address(random);
+        arg->value = simulator->get_random_executable_address(random);
         break;
 
       case rv_field_cls_uimm6:

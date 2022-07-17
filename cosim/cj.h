@@ -1,18 +1,21 @@
 #ifndef _COSIM_CJ_H
 #define _COSIM_CJ_H
-#include "config.h"
-#include "platform.h"
 #include "cfg.h"
-#include "processor.h"
 #include "mmu.h"
 #include "simif.h"
 #include "memif.h"
-#include "devices.h"
-#include "functional"
-#include "random"
-#include "queue"
-
+#include "config.h"
 #include "masker.h"
+#include "devices.h"
+#include "platform.h"
+#include "processor.h"
+
+#include "queue"
+#include "random"
+#include "functional"
+
+
+
 
 // Using json to configure in future
 class config_t : public cfg_t {
@@ -95,7 +98,6 @@ class magic_t;
 
 class cosim_cj_t : simif_t, chunked_memif_t {
 public:
-  static cosim_cj_t* simulator;
   cosim_cj_t(config_t& cfg);
   ~cosim_cj_t();
 
@@ -201,5 +203,5 @@ class magic_t : public abstract_device_t {
   std::vector<std::function<reg_t()>> generator;
 };
 
-
+extern cosim_cj_t* simulator;
 #endif
