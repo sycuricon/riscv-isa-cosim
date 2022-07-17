@@ -9,6 +9,7 @@
 #include "devices.h"
 #include "platform.h"
 #include "processor.h"
+#include "magic_device.h"
 
 #include "queue"
 #include "random"
