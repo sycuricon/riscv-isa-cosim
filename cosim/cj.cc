@@ -222,17 +222,6 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   state_t* s = p->get_state();
   mmu_t* mmu = p->get_mmu();
 
-  if (!start_randomize && dut_insn == 0x00002013UL) {
-    printf("[CJ] Enable insn randomization\n");
-    start_randomize = true;
-  } else if (start_randomize && dut_insn == 0xfff02013UL) {
-    printf("[CJ] Disable insn randomization\n");
-    start_randomize = false;
-  } else if (dut_insn == 0x00102013UL) {
-    printf("\e[1;33m[CJ] Reset mutation history\e[0m\n");
-    masker_inst_t::reset_mutation_history();
-  }
-
   // printf("[CJ] mutation condition: %d %016lx %016lx %016lx\n", 
           // start_randomize, s->pc, fuzz_start_addr, fuzz_end_addr);
 
@@ -243,6 +232,21 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   do {
     p->step(1, p->pending_intrpt);
   } while (get_core(0)->fix_pc);
+  
+
+  if (!start_randomize && dut_insn == 0x00002013UL) {
+    printf("[CJ] Enable insn randomization\n");
+    start_randomize = true;
+  } else if (start_randomize && dut_insn == 0xfff02013UL) {
+    printf("[CJ] Disable insn randomization\n");
+    start_randomize = false;
+  } else if (dut_insn == 0x00102013UL) {
+    printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
+    masker_inst_t::fence_mutation();
+  } else if ((dut_insn & 0x0000707f) == 0x0000100fUL) {
+    printf("\e[1;33m[CJ] FENCE.I, reset mutation queue\e[0m\n");
+    masker_inst_t::fence_mutation();
+  }
 
   // update tohost
   auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
@@ -324,7 +328,6 @@ void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
   p->pending_intrpt = true;
 }
 uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
-  printf("[CJ] insn: %lx\n", in);
   masker_inst_t insn(in, rv64, pc);
   decode_inst_opcode(&insn);
   decode_inst_oprand(&insn);
@@ -338,6 +341,14 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
     new_inst = insn.encode(true);
   } else {
     new_inst = in;
+  }
+
+  if (new_inst == 0x00102013UL) {
+    printf("\e[1;33m[CJ] Mark mutation queue\e[0m\n");
+    masker_inst_t::mark_fence_mutation();
+  } else if ((new_inst & 0x0000707f) == 0x0000100fUL) {
+    printf("\e[1;33m[CJ] FENCE.I, mark mutation queue\e[0m\n");
+    masker_inst_t::mark_fence_mutation();
   }
 
   insn.record_to_history();
@@ -458,7 +469,7 @@ uint64_t cosim_cj_t::get_random_executable_address(std::default_random_engine &r
   if (legal.size() > 0) {
     std::uniform_int_distribution<uint64_t> rand(0, legal.size() - 1);
     auto select = legal[rand(random)];
-    printf("[CJ] gnerated random label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
+    printf("[CJ] generated random label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
     return select;
   }
   else 

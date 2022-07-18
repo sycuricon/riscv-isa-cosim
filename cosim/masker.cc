@@ -549,8 +549,8 @@ void decode_inst_oprand(masker_inst_t* dec) {
 
 
 void masker_inst_t::mutation(bool debug) {
-  //if (history.find(pc) != history.end())  // already mutated
-  //  return;
+  if (history.find(pc) != history.end())  // already mutated
+    return;
 
   if (debug)
     printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx\n", rv_opcode_name[op], inst);
@@ -725,8 +725,8 @@ void masker_inst_t::mutation(bool debug) {
 
 rv_inst masker_inst_t::encode(bool debug) {
     rv_inst new_inst;
-    //if (history.find(pc) != history.end())
-    //  return inst = replay_mutation(debug);
+    if (history.find(pc) != history.end())
+      return inst = replay_mutation(debug);
 
     if ((inst & OP_MASK) == OP_32)
       new_inst = inst & 0x7f;
@@ -747,8 +747,7 @@ rv_inst masker_inst_t::encode(bool debug) {
   }
 
 rv_inst masker_inst_t::replay_mutation(bool debug) {
-  auto &q = history[pc];
-  auto new_inst = q.front(); q.pop();
+  auto new_inst = history[pc];
   if (debug) {
     masker_inst_t tmp(new_inst, rv64, pc);
     decode_inst_opcode(&tmp);
@@ -772,7 +771,7 @@ int masker_inst_t::random_rd_in_pipeline() {
 }
 
 void masker_inst_t::record_to_history() {
-  history[pc].push(inst);
+  history[pc] = inst;
   
   int rd = 0;           bool has_rd = false;
   int rs1 = 0;          bool has_rs1 = false;
@@ -805,6 +804,7 @@ void masker_inst_t::record_to_history() {
 
 void masker_inst_t::reset_mutation_history() {
   history.clear();
+
   rd_in_pipeline.clear();
 
   type[0] = &magic_zero;
@@ -816,9 +816,16 @@ void masker_inst_t::reset_mutation_history() {
   }
 }
 
+void masker_inst_t::fence_mutation() {
+  history.clear();
+}
+
+void masker_inst_t::mark_fence_mutation() {
+}
+
 std::default_random_engine masker_inst_t::random;
 std::uniform_int_distribution<uint64_t> masker_inst_t::rand2(0, 1);
-std::unordered_map<uint64_t, std::queue<uint64_t>> masker_inst_t::history;
+std::unordered_map<uint64_t, uint64_t> masker_inst_t::history;
 circular_queue<int, 16> masker_inst_t::rd_in_pipeline;
 magic_type *masker_inst_t::type[32];
 

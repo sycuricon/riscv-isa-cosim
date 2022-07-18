@@ -105,8 +105,10 @@ public:
   void mutation(bool debug=false);
   rv_inst replay_mutation(bool debug=false);
 
-  static void reset_mutation_history();
   void record_to_history();
+  static void reset_mutation_history();
+  static void fence_mutation();
+  static void mark_fence_mutation();
 
 private:
   static std::default_random_engine random;
@@ -115,7 +117,7 @@ private:
   static uint64_t randBits(uint64_t w);
   static int random_rd_in_pipeline();
 
-  static std::unordered_map<uint64_t, std::queue<uint64_t>> history;
+  static std::unordered_map<uint64_t, uint64_t> history;
   static circular_queue<int, 16> rd_in_pipeline;
   static magic_type *type[32];
 };
