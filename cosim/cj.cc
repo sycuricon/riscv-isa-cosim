@@ -226,7 +226,9 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
           // start_randomize, s->pc, fuzz_start_addr, fuzz_end_addr);
 
   if (start_randomize && (s->pc <= fuzz_end_addr && s->pc >= fuzz_start_addr)) {
-    mmu->set_insn_rdm(start_randomize);
+    mmu->set_insn_rdm(true);
+  } else {
+    mmu->set_insn_rdm(false);
   }
 
   do {
@@ -260,7 +262,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   uint32_t sim_insn = s->last_insn;
   size_t regNo, fregNo;
   if (s->XPR.get_last_write(regNo)) {
-//    printf("write back: %016lx\n", s->XPR[regNo]);
+  //  printf("write back: %d %016lx\n", regNo, s->XPR[regNo]);
     if (!check_board.set(regNo, s->XPR[regNo], dut_insn)) {
       printf("\x1b[31m[error] check board set %ld error \x1b[0m\n", regNo);
       return 10;

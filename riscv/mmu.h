@@ -346,7 +346,7 @@ public:
     }
 
     if (enable_insn_rdm && (insn != 0x00002013UL && insn != 0xfff02013UL)) {
-      enable_insn_rdm = false;
+      // enable_insn_rdm = false;
       masker_inst_t rdm_insn(insn, rv64, addr);
       insn = rdm_insn.replay_mutation(true);
       int high = 64 - length * 8;
