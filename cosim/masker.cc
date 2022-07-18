@@ -586,8 +586,9 @@ void masker_inst_t::mutation(bool debug) {
       case rv_field_c_rs2:
         if (rand2(random)) {  // RAW
           arg->value = random_rd_in_pipeline();
-        } else {
-          arg->value = randBits(5);
+        } else {  // rd_with_type
+          magic_type *t = &magic_void;
+          arg->value = rd_with_type(t);
         }
         break;
 
@@ -640,9 +641,15 @@ void masker_inst_t::mutation(bool debug) {
         arg->value = randBits(20) << 12;
         break;
       case rv_field_imm_j:
-        arg->value = randBits(20) << 1;
+        arg->value = simulator->get_random_executable_address(random) - pc;
         break;
       case rv_field_imm_i:
+        if (op == rv_op_jalr) {
+          arg->value = 0;
+        } else {
+          arg->value = randBits(12);
+        }
+        break;
       case rv_field_imm_s:
           arg->value = randBits(12);
         break;
@@ -770,6 +777,23 @@ int masker_inst_t::random_rd_in_pipeline() {
   return rd_in_pipeline[randInt(0, rd_in_pipeline.size())];
 }
 
+int masker_inst_t::rd_with_type(magic_type *t) {
+  std::vector<int> buf;
+  for (int i = 31; i > 0; i--) {
+    if (type[i]->is_child_of(t)) {
+      buf.push_back(i);
+    }
+  }
+  int n = buf.size();
+  if (n > 0) {
+    std::uniform_int_distribution<uint64_t> r(0, n-1);
+    return buf[r(random)];
+  }
+  else {
+    return randBits(5);
+  }
+}
+
 void masker_inst_t::record_to_history() {
   history[pc] = inst;
   
@@ -789,13 +813,19 @@ void masker_inst_t::record_to_history() {
     }
 
   // save type
-  if (op == rv_op_ld && rs1 == 0 && rd != 0) {  // ld
-    int64_t id = imm / 8;
-    if (0 <= id && id < magic_generator_type.size())
-      type[rd] = magic_generator_type[id];
-    else
+  if (rd != 0) {
+    if (op == rv_op_ld && rs1 == 0) {  // ld
+      int64_t id = imm / 8;
+      if (0 <= id && id < magic_generator_type.size())
+        type[rd] = magic_generator_type[id];
+      else
+        type[rd] = &magic_void;
+    } else if (op == rv_op_jal || op == rv_op_jalr) {  // jump
+      type[rd] = &magic_fuzz_address;
+    } else {
       type[rd] = &magic_void;
-  }  
+    }
+  }
 
   // save rd
   rd_in_pipeline.push(rd);
@@ -848,7 +878,7 @@ bool magic_type::is_child_of(magic_type *b) {
   while (!q.empty()) {
     auto a = q.front(); q.pop();
     if (a == b) return true;
-    for (auto &p : parents)
+    for (auto &p : a->parents)
       q.push(p);
   }
   return false;

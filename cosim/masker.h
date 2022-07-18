@@ -115,7 +115,9 @@ private:
   static std::uniform_int_distribution<uint64_t> rand2;
   static uint64_t randInt(uint64_t a, uint64_t b);
   static uint64_t randBits(uint64_t w);
+
   static int random_rd_in_pipeline();
+  static int rd_with_type(magic_type *t);
 
   static std::unordered_map<uint64_t, uint64_t> history;
   static circular_queue<int, 16> rd_in_pipeline;
