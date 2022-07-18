@@ -549,8 +549,8 @@ void decode_inst_oprand(masker_inst_t* dec) {
 
 
 void masker_inst_t::mutation(bool debug) {
-  if (history.find(pc) != history.end())  // already mutated
-    return;
+  //if (history.find(pc) != history.end())  // already mutated
+  //  return;
 
   if (debug)
     printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx\n", rv_opcode_name[op], inst);
@@ -572,13 +572,25 @@ void masker_inst_t::mutation(bool debug) {
 
       // registers
       case rv_field_rd:
+        if (rand2(random)) {  // WAW
+          arg->value = random_rd_in_pipeline();
+        } else {
+          arg->value = randBits(5);
+        }
+        break;
+
       case rv_field_rs1:
       case rv_field_rs2:
       case rv_field_rs3:
       case rv_field_c_rs1:
       case rv_field_c_rs2:
-        arg->value = randBits(5);
+        if (rand2(random)) {  // RAW
+          arg->value = random_rd_in_pipeline();
+        } else {
+          arg->value = randBits(5);
+        }
         break;
+
       case rv_field_c_rs1p:
       case rv_field_c_rs2p:
         arg->value = randBits(3);
@@ -638,7 +650,7 @@ void masker_inst_t::mutation(bool debug) {
       // imm_b is used for branch instruction
       // so should be given a valid exec addr
       case rv_field_imm_b:
-        arg->value = simulator->get_random_executable_address(random);
+        arg->value = simulator->get_random_executable_address(random) - pc;
         break;
 
       case rv_field_cls_uimm6:
@@ -695,8 +707,10 @@ void masker_inst_t::mutation(bool debug) {
         break;
 
       case rv_field_shamt_imm:
+        arg->value = randBits(5);
+        break;
       case rv_field_shamt_funct:
-        arg->value = randBits(5) << 1;
+        arg->value = randBits(1) << 5;
         break;
 
       default:
@@ -711,8 +725,8 @@ void masker_inst_t::mutation(bool debug) {
 
 rv_inst masker_inst_t::encode(bool debug) {
     rv_inst new_inst;
-    if (history.find(pc) != history.end())
-      return replay_mutation(debug);
+    //if (history.find(pc) != history.end())
+    //  return inst = replay_mutation(debug);
 
     if ((inst & OP_MASK) == OP_32)
       new_inst = inst & 0x7f;
@@ -733,7 +747,8 @@ rv_inst masker_inst_t::encode(bool debug) {
   }
 
 rv_inst masker_inst_t::replay_mutation(bool debug) {
-  auto new_inst = history[pc];
+  auto &q = history[pc];
+  auto new_inst = q.front(); q.pop();
   if (debug) {
     masker_inst_t tmp(new_inst, rv64, pc);
     decode_inst_opcode(&tmp);
@@ -752,8 +767,12 @@ uint64_t masker_inst_t::randBits(uint64_t w) {
   return r(random);
 }
 
+int masker_inst_t::random_rd_in_pipeline() {
+  return rd_in_pipeline[randInt(0, rd_in_pipeline.size())];
+}
+
 void masker_inst_t::record_to_history() {
-  history[pc] = inst;
+  history[pc].push(inst);
   
   int rd = 0;           bool has_rd = false;
   int rs1 = 0;          bool has_rs1 = false;
@@ -787,11 +806,19 @@ void masker_inst_t::record_to_history() {
 void masker_inst_t::reset_mutation_history() {
   history.clear();
   rd_in_pipeline.clear();
+
+  type[0] = &magic_zero;
+  for (int i = 1; i <= 31; i++)
+    type[i] = &magic_void;
+
+  for (int i = 0; i < 5; i++) {
+    rd_in_pipeline.push(0);
+  }
 }
 
 std::default_random_engine masker_inst_t::random;
 std::uniform_int_distribution<uint64_t> masker_inst_t::rand2(0, 1);
-std::unordered_map<uint64_t, uint64_t> masker_inst_t::history;
+std::unordered_map<uint64_t, std::queue<uint64_t>> masker_inst_t::history;
 circular_queue<int, 16> masker_inst_t::rd_in_pipeline;
 magic_type *masker_inst_t::type[32];
 

@@ -7,7 +7,7 @@
 #include <random>
 #include <iostream>
 #include <unordered_map>
-#include <list>
+#include <queue>
 
 // opcode mask
 #define OP_MASK       (((1UL << 2) - 1) << 0)
@@ -94,13 +94,6 @@ public:
   masker_inst_t(rv_inst inst, rv_xlen xlen, uint64_t pc) :
     pc(pc), xlen(xlen), inst(inst)
   {
-    type[0] = &magic_zero;
-    for (int i = 1; i <= 31; i++)
-      type[i] = &magic_void;
-
-    for (int i = 0; i < 5; i++) {
-      rd_in_pipeline.push(0);
-    }
   }
 
   void decode() {
@@ -120,9 +113,9 @@ private:
   static std::uniform_int_distribution<uint64_t> rand2;
   static uint64_t randInt(uint64_t a, uint64_t b);
   static uint64_t randBits(uint64_t w);
+  static int random_rd_in_pipeline();
 
-
-  static std::unordered_map<uint64_t, uint64_t> history;
+  static std::unordered_map<uint64_t, std::queue<uint64_t>> history;
   static circular_queue<int, 16> rd_in_pipeline;
   static magic_type *type[32];
 };

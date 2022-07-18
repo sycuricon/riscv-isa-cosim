@@ -181,6 +181,8 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   magic.reset(new magic_t());
   bus.add_device(0, magic.get());
 
+  masker_inst_t::reset_mutation_history();
+
  // done
   fprintf(stderr, "[*] `Commit & Judge' General Co-simulation Framework\n");
   fprintf(stderr, "\t\tpowered by Spike " SPIKE_VERSION "\n");
@@ -228,6 +230,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
     start_randomize = false;
   } else if (dut_insn == 0x00102013UL) {
     printf("\e[1;33m[CJ] Reset mutation history\e[0m\n");
+    masker_inst_t::reset_mutation_history();
   }
 
   // printf("[CJ] mutation condition: %d %016lx %016lx %016lx\n", 
@@ -321,13 +324,14 @@ void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
   p->pending_intrpt = true;
 }
 uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
+  printf("[CJ] insn: %lx\n", in);
   masker_inst_t insn(in, rv64, pc);
   decode_inst_opcode(&insn);
   decode_inst_oprand(&insn);
   
   uint64_t new_inst;
   // Mutate
-  if (in & 0xfffff == 0x00002013UL) {
+  if ((in & 0xfffff) == 0x02013UL) {
     new_inst = in;
   } else if (start_randomize && (pc <= fuzz_end_addr && pc >= fuzz_start_addr)) {
     insn.mutation(true);
