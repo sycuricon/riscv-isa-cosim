@@ -233,6 +233,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
 
   do {
     p->step(1, p->pending_intrpt);
+    mmu->set_insn_rdm(false);
   } while (get_core(0)->fix_pc);
   
 
@@ -336,7 +337,7 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
   
   uint64_t new_inst;
   // Mutate
-  if ((in & 0xfffff) == 0x02013UL) {
+  if (hint_insn(in)) {
     new_inst = in;
   } else if (start_randomize && (pc <= fuzz_end_addr && pc >= fuzz_start_addr)) {
     insn.mutation(true);

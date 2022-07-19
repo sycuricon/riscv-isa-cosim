@@ -92,9 +92,7 @@ public:
   std::vector<field_t*> args;
 
   masker_inst_t(rv_inst inst, rv_xlen xlen, uint64_t pc) :
-    pc(pc), xlen(xlen), inst(inst)
-  {
-  }
+    pc(pc), xlen(xlen), inst(inst) { }
 
   void decode() {
     for (auto arg : args)
@@ -123,5 +121,17 @@ private:
   static circular_queue<int, 16> rd_in_pipeline;
   static magic_type *type[32];
 };
+
+inline bool hint_insn(uint64_t insn) {
+  /* hint insn: slti x0, x0, imm */
+  if ((insn & 0xfffff) == 0x02013) 
+    return true;
+  /* magic device: l? x?, imm(x0) */
+  else if ((insn & 0xf8003) == 0x00003)
+    return true;
+  else
+    return false;
+}
+
 
 #endif
