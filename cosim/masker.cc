@@ -588,6 +588,11 @@ void masker_inst_t::mutation(bool debug) {
           arg->value = random_rd_in_pipeline();
         } else {  // rd_with_type
           magic_type *t = &magic_void;
+          if ( rv_op_lb <= op && op <= rv_op_sw || 
+              rv_op_lwu <= op && op <= rv_op_sd ||
+              rv_op_ldu <= op && op <= rv_op_sq ||
+              op == rv_op_jalr)
+            t = &magic_address;
           arg->value = rd_with_type(t);
         }
         break;
@@ -778,6 +783,7 @@ int masker_inst_t::random_rd_in_pipeline() {
 }
 
 int masker_inst_t::rd_with_type(magic_type *t) {
+  printf("[CJ] Require reg type %s, ", t->name.c_str());
   std::vector<int> buf;
   for (int i = 31; i > 0; i--) {
     if (type[i]->is_child_of(t)) {
@@ -785,6 +791,10 @@ int masker_inst_t::rd_with_type(magic_type *t) {
     }
   }
   int n = buf.size();
+  printf("%d found.\n", n);
+  if (t != &magic_void)
+    simulator->record_rd_mutation_stats(n);
+
   if (n > 0) {
     std::uniform_int_distribution<uint64_t> r(0, n-1);
     return buf[r(random)];
@@ -862,10 +872,8 @@ magic_type *masker_inst_t::type[32];
 
 
 
-magic_type::magic_type() {
-}
-
-magic_type::magic_type(std::vector<magic_type*> parents) :
+magic_type::magic_type(const std::string &name, std::vector<magic_type*> parents) :
+  name(name),
   parents(parents)
 {
   for (auto &p : parents)
@@ -884,9 +892,10 @@ bool magic_type::is_child_of(magic_type *b) {
   return false;
 }
 
-magic_type magic_void;
-magic_type magic_int({&magic_void});
-magic_type magic_float({&magic_void});
-magic_type magic_zero({&magic_int, &magic_float});
-magic_type magic_address({&magic_void});
-magic_type magic_fuzz_address({&magic_address});
+magic_type magic_void("void");
+magic_type magic_int("int", {&magic_void});
+magic_type magic_float("float", {&magic_void});
+magic_type magic_zero("zero", {&magic_int, &magic_float});
+magic_type magic_address("address", {&magic_void});
+magic_type magic_fuzz_address("fuzz_address", {&magic_address});
+

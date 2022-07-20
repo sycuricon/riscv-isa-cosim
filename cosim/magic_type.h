@@ -5,9 +5,9 @@
 
 class magic_type {
 public:
-  magic_type();
-  magic_type(std::vector<magic_type*> parents);
+  magic_type(const std::string &name, std::vector<magic_type*> parents={});
   bool is_child_of(magic_type *b);
+  const std::string name;
 private:
   std::vector<magic_type*> parents;
   std::vector<magic_type*> children;

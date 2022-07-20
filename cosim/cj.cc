@@ -10,7 +10,9 @@
 #include <sstream>
 
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
-  finish(false), tohost_addr(0), tohost_data(0),
+  matched_reg_count_stat(33, 0),
+  finish(false),
+  tohost_addr(0), tohost_data(0),
   start_randomize(false) {
 
   isa_parser_t isa(cfg.isa(), cfg.priv());
@@ -195,6 +197,12 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
 }
 
 cosim_cj_t::~cosim_cj_t() {
+  printf("[CJ] Matched reg count stat:\n");
+  for (size_t i = 0; i <= 32; i++) {
+    printf("[CJ] %d match(es): %u\n", i, matched_reg_count_stat[i]);
+  }
+  printf("\n");
+
   for (size_t i = 0; i < procs.size(); i++)
     delete procs[i];
   delete debug_mmu;
@@ -477,6 +485,10 @@ uint64_t cosim_cj_t::get_random_executable_address(std::default_random_engine &r
   }
   else 
     return 0x20220718;
+}
+
+void cosim_cj_t::record_rd_mutation_stats(unsigned int matched_reg_count) {
+  matched_reg_count_stat[matched_reg_count]++;
 }
 
 
