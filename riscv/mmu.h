@@ -348,7 +348,7 @@ public:
     if (enable_insn_rdm && !hint_insn(insn)) {
       // enable_insn_rdm = false;
       masker_inst_t rdm_insn(insn, rv64, addr);
-      insn = rdm_insn.replay_mutation(true);
+      insn = rdm_insn.replay_mutation(proc->cosim_verbose);
       int high = 64 - length * 8;
       insn = (((int64_t)insn) << high) >> high;
 

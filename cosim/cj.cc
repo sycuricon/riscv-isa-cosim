@@ -17,6 +17,8 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   std::ostream sout_(nullptr);
   sout_.rdbuf(std::cerr.rdbuf());
 
+  cj_debug = cfg.verbose();
+
   // create memory and debug mmu
   mems.push_back(
       std::make_pair(cfg.mem_base(),
@@ -236,18 +238,17 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
     mmu->set_insn_rdm(false);
   } while (get_core(0)->fix_pc);
   
-
   if (!start_randomize && dut_insn == 0x00002013UL) {
-    printf("[CJ] Enable insn randomization\n");
+    // printf("[CJ] Enable insn randomization\n");
     start_randomize = true;
   } else if (start_randomize && dut_insn == 0xfff02013UL) {
-    printf("[CJ] Disable insn randomization\n");
+    // printf("[CJ] Disable insn randomization\n");
     start_randomize = false;
   } else if (dut_insn == 0x00102013UL) {
-    printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
+    // printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
     masker_inst_t::fence_mutation();
   } else if ((dut_insn & 0x0000707f) == 0x0000100fUL) {
-    printf("\e[1;33m[CJ] FENCE.I, reset mutation queue\e[0m\n");
+    // printf("\e[1;33m[CJ] FENCE.I, reset mutation queue\e[0m\n");
     masker_inst_t::fence_mutation();
   }
 
@@ -255,6 +256,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
   memcpy(&tohost_data, &data, sizeof data);
   update_tohost_info();
+  debug_mmu->store_uint64(tohost_addr, 0);
 
   if (!check)
     return 0;
@@ -285,6 +287,9 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
 
   return 0;
 }
+
+inline long unsigned int dump(const freg_t& f) { return f.v[0]; }
+inline long unsigned int dump(const reg_t& x) { return x; }
 int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bool fc) {
   processor_t* p = get_core(hartid);
   state_t* s = p->get_state();
@@ -297,6 +302,8 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         f_check_board.clear(dut_waddr);
         return 0;
       } else {
+        printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
+          dump(f_check_board.get_data(dut_waddr)), dump(freg(f64(dut_wdata))));
         printf("\x1b[31m[error] float check board check %d error \x1b[0m\n", dut_waddr);
         return 10;
       }
@@ -314,6 +321,8 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         s->XPR.write(dut_waddr, dut_wdata);
         check_board.clear(dut_waddr);
       } else {
+        printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
+          dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
         printf("\x1b[31m[error] check board clear %d error \x1b[0m\n", dut_waddr);
         return 10;
       }
@@ -323,6 +332,7 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
 
   return 0;
 }
+
 void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
   processor_t* p = get_core(hartid);
   state_t* s = p->get_state();
@@ -340,23 +350,24 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
   if (hint_insn(in)) {
     new_inst = in;
   } else if (start_randomize && (pc <= fuzz_end_addr && pc >= fuzz_start_addr)) {
-    insn.mutation(true);
-    new_inst = insn.encode(true);
+    insn.mutation(cj_debug);
+    new_inst = insn.encode(cj_debug);
   } else {
     new_inst = in;
   }
 
   if (new_inst == 0x00102013UL) {
-    printf("\e[1;33m[CJ] Mark mutation queue\e[0m\n");
+    if (cj_debug) printf("\e[1;33m[CJ] Mark mutation queue\e[0m\n");
     masker_inst_t::mark_fence_mutation();
   } else if ((new_inst & 0x0000707f) == 0x0000100fUL) {
-    printf("\e[1;33m[CJ] FENCE.I, mark mutation queue\e[0m\n");
+    if (cj_debug) printf("\e[1;33m[CJ] FENCE.I, mark mutation queue\e[0m\n");
     masker_inst_t::mark_fence_mutation();
   }
 
   insn.record_to_history();
   return new_inst;
 }
+
 uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
   uint64_t buf;
   if (read_select == MAGIC_EPC_NEXT) {   // step to next inst
@@ -364,10 +375,10 @@ uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
       auto mepc = p->get_csr(CSR_MEPC);
       if (in_fuzz_range(mepc)) {  // step to the next inst
         int step = p->mmu->test_insn_length(mepc);
-        printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
+        if (cj_debug) printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
         return mepc + step;
       } else { // load a randomly selected target
-        printf("[CJ] mepc %016lx out of fuzz range\n", mepc);
+        if (cj_debug) printf("[CJ] mepc %016lx out of fuzz range\n", mepc);
         magic->load(MAGIC_RDM_ADDR, 8, (uint8_t*)(&buf));
         return buf;
       }
@@ -376,18 +387,17 @@ uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
       return buf;
   }
 }
+
 void cosim_cj_t::update_tohost_info() {
   // tohost_addr = 0x80001000
   switch (tohost_data & 0xff) {
     case 0x02:
       fuzz_start_addr = (int64_t)tohost_data >> 8;
       printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
-      debug_mmu->store_uint64(tohost_addr, 0);
       break;
     case 0x12:
       fuzz_end_addr = (int64_t)tohost_data >> 8;
-      printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);
-      debug_mmu->store_uint64(tohost_addr, 0);       
+      printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);     
       break;
   }
 }
@@ -472,7 +482,7 @@ uint64_t cosim_cj_t::get_random_executable_address(std::default_random_engine &r
   if (legal.size() > 0) {
     std::uniform_int_distribution<uint64_t> rand(0, legal.size() - 1);
     auto select = legal[rand(random)];
-    printf("[CJ] generated random label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
+    if (cj_debug) printf("[CJ] generated random label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
     return select;
   }
   else 
