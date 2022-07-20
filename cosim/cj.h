@@ -68,8 +68,6 @@ public:
       if (!valid[i])
         return false;
       if (data[i] != value) {
-        printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
-          dump(data[i]), dump(value));
         return false;
       }
       valid[i] = !valid[i];
@@ -83,14 +81,12 @@ public:
   checkboard_t() { reset(); }
   void reset() { std::fill(std::begin(valid), std::end(valid), false); }
   uint32_t get_insn(size_t i) { return insn[i]; }
+  T get_data(size_t i) { return data[i]; }
 
 private:
   T data[N];
   uint32_t insn[N];
   bool valid[N];
-
-  long unsigned int dump(const freg_t& f) { return f.v[0]; }
-  long unsigned int dump(const reg_t& x) { return x; }
 };
 
 class magic_t;
@@ -132,6 +128,7 @@ public:
 
   processor_t* get_core(size_t i) { return procs.at(i); }
   reg_t get_tohost() { return tohost_data; };
+  void set_tohost(reg_t value) { tohost_data = value; };
 
   checkboard_t<reg_t, NXPR, true> check_board;
   checkboard_t<freg_t, NFPR, false> f_check_board;
@@ -157,6 +154,7 @@ private:
 
   std::vector<unsigned int> matched_reg_count_stat;
   
+  bool cj_debug;
   bool finish;
   addr_t tohost_addr;
   addr_t fuzz_start_addr;
@@ -187,7 +185,7 @@ class magic_t : public abstract_device_t {
     reg_t tmp = id < generator.size() ? generator[id]() : 0;
     ignore = true;
     memcpy(bytes, &tmp, len);
-    printf("[CJ] Magic read: %016lx[%ld] = %016lx\n", addr, len, tmp);
+    // printf("[CJ] Magic read: %016lx[%ld] = %016lx\n", addr, len, tmp);
     return true;
   }
   
