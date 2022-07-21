@@ -17,7 +17,7 @@ const char *reg_name[32] = {
 };
 
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
-  matched_reg_count_stat(33, 0),
+  matched_reg_count_stat(33, 0), blind(false),
   mmio_access(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
 
@@ -26,6 +26,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   sout_.rdbuf(std::cerr.rdbuf());
 
   cj_debug = cfg.verbose();
+  // blind = true;
   // cj_debug = false;
 
   // create memory and debug mmu
@@ -253,23 +254,38 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   //  printf("write back: %d %016lx\n", regNo, s->XPR[regNo]);
     if (!check_board.set(regNo, s->XPR[regNo], dut_insn, dut_pc, get_mmio_access())) {
       printf("\x1b[31m[error] check board set %ld error \x1b[0m\n", regNo);
-      return 10;
+      if (blind) {
+        tohost_data = 1;
+        return 0;
+      } else {
+        return 10;
+      }
     }
   }
   if (s->FPR.get_last_write(fregNo)) {
     if (!f_check_board.set(fregNo, s->FPR[fregNo], dut_insn, dut_pc, get_mmio_access())) {
       printf("\x1b[31m[error] float check board set %ld error \x1b[0m\n", fregNo);
-      return 10;
+      if (blind) {
+        tohost_data = 1;
+        return 0;
+      } else {
+        return 10;
+      }
     }
   }
 
   if (dut_pc != sim_pc || dut_insn != sim_insn) {
     printf("\x1b[31m[error] PC SIM \x1b[33m%016lx\x1b[31m, DUT \x1b[36m%016lx\x1b[0m\n", sim_pc, dut_pc);
     printf("\x1b[31m[error] INSN SIM \x1b[33m%08x\x1b[31m, DUT \x1b[36m%08x\x1b[0m\n", sim_insn, dut_insn);
-    for (int i = 0; i < 32; i++) {
-      printf("%s = 0x%016lx\n", reg_name[i], s->XPR[i]);
+    // for (int i = 0; i < 32; i++) {
+    //   printf("%s = 0x%016lx\n", reg_name[i], s->XPR[i]);
+    // }
+    if (blind) {
+      tohost_data = 1;
+      return 0;
+    } else {
+      return 255;
     }
-    return 255;
   }
 
   return 0;
@@ -291,7 +307,13 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
           dump(f_check_board.get_data(dut_waddr)), dump(freg(f64(dut_wdata))));
         printf("\x1b[31m[error] float check board check %d error \x1b[0m\n", dut_waddr);
-        return 10;
+        if (blind) {
+          s->FPR.write(dut_waddr, freg(f64(dut_wdata)));
+          f_check_board.clear(dut_waddr);
+          return 0;
+        } else {
+          return 255;
+        }
       }
 
     }
@@ -302,15 +324,23 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         check_board.clear(dut_waddr);
         return 0;
       } else if ((check_board.get_insn(dut_waddr) & 0x7f) == 0x73) {
+        // printf("\x1b[31m[warn] %016lx@%08lx CSR UNMATCH \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
+        //   check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
         s->XPR.write(dut_waddr, dut_wdata);
         check_board.clear(dut_waddr);
+        return 0;
       } else {
         printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
           dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
         printf("\x1b[31m[error] check board clear %d error \x1b[0m\n", dut_waddr);
-        return 10;
+        if (blind) {
+          s->XPR.write(dut_waddr, dut_wdata);
+          check_board.clear(dut_waddr);
+          return 0;
+        } else {
+          return 255;
+        }
       }
-
     }
   }
 

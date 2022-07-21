@@ -86,6 +86,7 @@ public:
     std::fill(std::begin(ignore), std::end(ignore), false);
   }
   uint32_t get_insn(size_t i) { return insn[i]; }
+  reg_t get_pc(size_t i) { return pc[i]; }
   T get_data(size_t i) { return data[i]; }
   bool get_ignore(size_t i) { return ignore[i]; }
 
@@ -166,6 +167,7 @@ private:
 
   std::vector<unsigned int> matched_reg_count_stat;
   
+  bool blind;
   bool cj_debug;
   bool mmio_access;
   addr_t tohost_addr;
