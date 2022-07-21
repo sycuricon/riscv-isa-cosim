@@ -99,6 +99,8 @@ public:
       arg->decode(inst);
   }
 
+  rv_inst bare_op();
+
   rv_inst encode(bool debug=false);
   void mutation(bool debug=false);
   rv_inst replay_mutation(bool debug=false);

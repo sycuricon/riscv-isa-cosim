@@ -145,6 +145,10 @@ public:
   checkboard_t<freg_t, NFPR, false> f_check_board;
 
   void update_tohost_info();
+
+  //debug
+  void record_rd_mutation_stats(unsigned int matched_reg_count);
+
 private:
   std::vector<std::pair<reg_t, mem_t*>> mems;
   mmu_t* debug_mmu;
@@ -159,6 +163,8 @@ private:
   std::unique_ptr<clint_t> clint;
   std::unique_ptr<magic_t> magic;
   bus_t bus;
+
+  std::vector<unsigned int> matched_reg_count_stat;
   
   bool cj_debug;
   bool mmio_access;
