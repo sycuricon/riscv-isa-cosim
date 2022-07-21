@@ -53,13 +53,15 @@ inline bool operator!=(const float128_t& lhs, const float128_t& rhs) {
 template <class T, size_t N, bool ignore_zero>
 class checkboard_t {
 public:
-  bool set(size_t i, T value, uint32_t dut_insn) {
+  bool set(size_t i, T value, uint32_t dut_insn, reg_t dut_pc, bool mmio_ignore = false) {
     if (!ignore_zero || i != 0) {
       if (valid[i])
         return false;
       valid[i] = !valid[i];
+      ignore[i] = mmio_ignore;
       data[i] = value;
       insn[i] = dut_insn;
+      pc[i] = dut_pc;
     }
     return true;
   }
@@ -79,17 +81,24 @@ public:
   }
 
   checkboard_t() { reset(); }
-  void reset() { std::fill(std::begin(valid), std::end(valid), false); }
+  void reset() { 
+    std::fill(std::begin(valid), std::end(valid), false);
+    std::fill(std::begin(ignore), std::end(ignore), false);
+  }
   uint32_t get_insn(size_t i) { return insn[i]; }
   T get_data(size_t i) { return data[i]; }
+  bool get_ignore(size_t i) { return ignore[i]; }
 
 private:
   T data[N];
   uint32_t insn[N];
+  reg_t pc[N];
   bool valid[N];
+  bool ignore[N];
 };
 
 class magic_t;
+class dummy_device_t;
 
 class cosim_cj_t : simif_t, chunked_memif_t {
 public:
@@ -129,6 +138,8 @@ public:
   processor_t* get_core(size_t i) { return procs.at(i); }
   reg_t get_tohost() { return tohost_data; };
   void set_tohost(reg_t value) { tohost_data = value; };
+  bool get_mmio_access() { return mmio_access; }
+  void clear_mmio_access() { mmio_access = false; }
 
   checkboard_t<reg_t, NXPR, true> check_board;
   checkboard_t<freg_t, NFPR, false> f_check_board;
@@ -138,6 +149,7 @@ private:
   std::vector<std::pair<reg_t, mem_t*>> mems;
   mmu_t* debug_mmu;
   std::vector<processor_t*> procs;
+  std::vector<dummy_device_t*> mmios;
   reg_t start_pc;
   reg_t elf_entry;
   std::string dts;
@@ -149,7 +161,7 @@ private:
   bus_t bus;
   
   bool cj_debug;
-  bool finish;
+  bool mmio_access;
   addr_t tohost_addr;
   addr_t fuzz_start_addr;
   addr_t fuzz_end_addr;
@@ -160,6 +172,18 @@ private:
   void idle();
 
   bool start_randomize;
+};
+
+class dummy_device_t : public abstract_device_t {
+ public:
+  dummy_device_t(size_t addr, size_t size) : mmio_addr(addr), mmio_size(size) {}
+  bool load(reg_t addr, size_t len, uint8_t* bytes) { return (addr + len) < mmio_size; }
+  bool store(reg_t addr, size_t len, const uint8_t* bytes) { return (addr + len) < mmio_size; }
+  size_t size() { return mmio_size; }
+  size_t addr() { return mmio_addr; }
+private:
+  size_t mmio_addr;
+  size_t mmio_size;
 };
 
 extern const std::vector<magic_type*> magic_generator_type;

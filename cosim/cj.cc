@@ -9,8 +9,15 @@
 #include <cstdio>
 #include <sstream>
 
+const char *reg_name[32] = {
+    "x0", "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
+    "s0", "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
+    "a6", "a7", "s2",  "s3",  "s4", "s5", "s6", "s7",
+    "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
+};
+
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
-  finish(false), tohost_addr(0), tohost_data(0),
+  mmio_access(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
 
   isa_parser_t isa(cfg.isa(), cfg.priv());
@@ -18,6 +25,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   sout_.rdbuf(std::cerr.rdbuf());
 
   cj_debug = cfg.verbose();
+  // cj_debug = false;
 
   // create memory and debug mmu
   mems.push_back(
@@ -35,9 +43,11 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     }
     procs[i]->set_debug(true);
     procs[i]->cosim_verbose = cfg.verbose();
+    if (cfg.verbose()) procs[i]->enable_log_commits();
   }
 
   // create device tree and compile
+  // TODO: automatic create dummy device from dts
   if (cfg.dtsfile()) {
     std::ifstream fin(cfg.dtsfile(), std::ios::binary);
     if (!fin.good()) {
@@ -68,15 +78,8 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     exit(-1);
   }
 
-  // create clint
-  void *fdt = (void *)dtb.c_str();
-  reg_t clint_base;
-  if (fdt_parse_clint(fdt, &clint_base, "riscv,clint0") == 0) {
-    clint.reset(new clint_t(procs, cfg.cycle_freq() / cfg.time_freq_count(), false));
-    bus.add_device(clint_base, clint.get());
-  }
-
   // configure processor property
+  void *fdt = (void *)dtb.c_str();
   int cpu_offset = 0, rc;
   size_t cpu_idx = 0;
   cpu_offset = fdt_get_offset(fdt, "/cpus");
@@ -132,58 +135,25 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     cpu_idx++;
   }
 
+  mmios.push_back(new dummy_device_t(0x0UL, 0x1000UL));
+  mmios.push_back(new dummy_device_t(0x3000UL, 0x1000UL));
+  mmios.push_back(new dummy_device_t(0x10000UL, 0x10000UL));
+  mmios.push_back(new dummy_device_t(0x20000UL, 0x2000UL));
+  mmios.push_back(new dummy_device_t(0x2000000UL, 0x10000UL));
+  mmios.push_back(new dummy_device_t(0x64000000UL, 0x1000UL));
+  mmios.push_back(new dummy_device_t(0xc000000UL, 0x4000000UL));
+  for (size_t i = 0; i < mmios.size(); i++)
+      bus.add_device(mmios[i]->addr(), mmios[i]);
+
   // load test elf and setup symbol table
   if (!cfg.elffile()) {
     std::cerr << "At least one testcase is required!\n";
     exit(1);
   }
   load_testcase(cfg.elffile());
-
-  // create bootrom
-  const int reset_vec_size = 8;
-  start_pc = cfg.start_pc() == reg_t(-1) ? elf_entry : cfg.start_pc();
-  uint32_t reset_vec[reset_vec_size] = {
-      0x297,                                      // auipc  t0, 0x0
-      0x28593 + (reset_vec_size * 4 << 20),       // addi   a1, t0, &dtb
-      0xf1402573,                                 // csrr   a0, mhartid
-      get_core(0)->get_xlen() == 32 ?
-      0x0182a283u :                                   // lw     t0, 24(t0)
-      0x0182b283u,                                    // ld     t0, 24(t0)
-      0x28067,                                    // jr     t0
-      0,
-      (uint32_t) (start_pc & 0xffffffff),
-      (uint32_t) (start_pc >> 32)
-  };
-  if (get_target_endianness() == memif_endianness_big) {
-    int i;
-    // Instuctions are little endian
-    for (i = 0; reset_vec[i] != 0; i++)
-      reset_vec[i] = to_le(reset_vec[i]);
-    // Data is big endian
-    for (; i < reset_vec_size; i++)
-      reset_vec[i] = to_be(reset_vec[i]);
-
-    // Correct the high/low order of 64-bit start PC
-    if (get_core(0)->get_xlen() != 32)
-      std::swap(reset_vec[reset_vec_size-2], reset_vec[reset_vec_size-1]);
-  } else {
-    for (int i = 0; i < reset_vec_size; i++)
-      reset_vec[i] = to_le(reset_vec[i]);
-  }
-
-  std::vector<char> rom((char*)reset_vec, (char*)reset_vec + sizeof(reset_vec));
-
-  rom.insert(rom.end(), dtb.begin(), dtb.end());
-  const int align = 0x1000;
-  rom.resize((rom.size() + align - 1) / align * align);
-
-  boot_rom.reset(new rom_device_t(rom));
-  bus.add_device(DEFAULT_RSTVEC, boot_rom.get());
-
   magic.reset(new magic_t());
-  bus.add_device(0, magic.get());
-
   masker_inst_t::reset_mutation_history();
+
 
  // done
   fprintf(stderr, "[*] `Commit & Judge' General Co-simulation Framework\n");
@@ -199,6 +169,8 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
 cosim_cj_t::~cosim_cj_t() {
   for (size_t i = 0; i < procs.size(); i++)
     delete procs[i];
+  for (size_t i = 0; i < mmios.size(); i++)
+    delete mmios[i];
   delete debug_mmu;
 }
 
@@ -233,10 +205,15 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
     mmu->set_insn_rdm(false);
   }
 
+  clear_mmio_access();
+
   do {
     p->step(1, p->pending_intrpt);
     mmu->set_insn_rdm(false);
   } while (get_core(0)->fix_pc);
+
+  // printf("[CJ] current prev: %d mstatus : %lx\n", s->prv, s->mstatus->read());
+  // printf("[CJ] tvec %lx %lx\n", s->mtvec->read(), s->stvec->read());
   
   if (!start_randomize && dut_insn == 0x00002013UL) {
     // printf("[CJ] Enable insn randomization\n");
@@ -266,22 +243,24 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   size_t regNo, fregNo;
   if (s->XPR.get_last_write(regNo)) {
   //  printf("write back: %d %016lx\n", regNo, s->XPR[regNo]);
-    if (!check_board.set(regNo, s->XPR[regNo], dut_insn)) {
+    if (!check_board.set(regNo, s->XPR[regNo], dut_insn, dut_pc, get_mmio_access())) {
       printf("\x1b[31m[error] check board set %ld error \x1b[0m\n", regNo);
       return 10;
     }
   }
   if (s->FPR.get_last_write(fregNo)) {
-    if (!f_check_board.set(fregNo, s->FPR[fregNo], dut_insn)) {
+    if (!f_check_board.set(fregNo, s->FPR[fregNo], dut_insn, dut_pc, get_mmio_access())) {
       printf("\x1b[31m[error] float check board set %ld error \x1b[0m\n", fregNo);
       return 10;
     }
   }
 
-  if (dut_pc != sim_pc ||
-      dut_insn != sim_insn) {
+  if (dut_pc != sim_pc || dut_insn != sim_insn) {
     printf("\x1b[31m[error] PC SIM \x1b[33m%016lx\x1b[31m, DUT \x1b[36m%016lx\x1b[0m\n", sim_pc, dut_pc);
     printf("\x1b[31m[error] INSN SIM \x1b[33m%08x\x1b[31m, DUT \x1b[36m%08x\x1b[0m\n", sim_insn, dut_insn);
+    for (int i = 0; i < 32; i++) {
+      printf("%s = 0x%016lx\n", reg_name[i], s->XPR[i]);
+    }
     return 255;
   }
 
@@ -296,9 +275,8 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
 
   if (fc) {
     if (!f_check_board.clear(dut_waddr, freg(f64(dut_wdata)))) {
-      if (magic->get_ignore() && ((f_check_board.get_insn(dut_waddr) & 0x7f) == 0x07)) {
+      if (f_check_board.get_ignore(dut_waddr)) {
         s->FPR.write(dut_waddr, freg(f64(dut_wdata)));
-        magic->clear_ignore();
         f_check_board.clear(dut_waddr);
         return 0;
       } else {
@@ -311,10 +289,8 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
     }
   } else {
     if (!check_board.clear(dut_waddr, dut_wdata)) {
-      if (magic->get_ignore() && ( ((check_board.get_insn(dut_waddr) & 0x7f) == 0x03) ||
-                                   ((check_board.get_insn(dut_waddr) & 0x7f) == 0x2f) )) {
+      if (check_board.get_ignore(dut_waddr)) {
         s->XPR.write(dut_waddr, dut_wdata);
-        magic->clear_ignore();
         check_board.clear(dut_waddr);
         return 0;
       } else if ((check_board.get_insn(dut_waddr) & 0x7f) == 0x73) {
@@ -340,6 +316,7 @@ void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
   s->mip->backdoor_write_with_mask(1 << except_code, 1 << except_code);
   p->pending_intrpt = true;
 }
+
 uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
   masker_inst_t insn(in, rv64, pc);
   decode_inst_opcode(&insn);
@@ -451,7 +428,13 @@ char* cosim_cj_t::addr_to_mem(reg_t addr) {
 bool cosim_cj_t::mmio_load(reg_t addr, size_t len, uint8_t* bytes) {
   if (addr + len < addr || !paddr_ok(addr + len - 1))
     return false;
-  return bus.load(addr, len, bytes);
+  
+  if (bus.load(addr, len, bytes)) {
+    mmio_access = true;
+    return true;
+  } else {
+    return false;
+  }
 }
 
 bool cosim_cj_t::mmio_store(reg_t addr, size_t len, const uint8_t* bytes) {
