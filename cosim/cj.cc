@@ -191,9 +191,22 @@ void cosim_cj_t::load_testcase(const char* elffile) {
   else
     fprintf(stderr, "warning: tohost symbols not in ELF; can't communicate with target\n");
   
+  if (symbols.count("fuzz_start")) {
+    fuzz_start_addr = symbols["fuzz_start"];
+    printf("[CJ] fuzz_start: %016lx\n", fuzz_start_addr);
+  } else {
+    fprintf(stderr, "warning: fuzz_start symbols not in ELF; online fuzzing is off\n");
+  }
+  if (symbols.count("fuzz_end")) {
+    fuzz_end_addr = symbols["fuzz_end"];
+    printf("[CJ] fuzz_end: %016lx\n", fuzz_end_addr);
+  } else {
+    fprintf(stderr, "warning: fuzz_end symbols not in ELF; online fuzzing is off\n");
+  }
+
   for (auto i : symbols) {
     auto it = addr2symbol.find(i.second);
-    if ( it == addr2symbol.end())
+    if (it == addr2symbol.end())
       addr2symbol[i.second] = i.first;
   }
 }
@@ -376,14 +389,8 @@ uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
 void cosim_cj_t::update_tohost_info() {
   // tohost_addr = 0x80001000
   switch (tohost_data & 0xff) {
-    case 0x02:
-      fuzz_start_addr = (int64_t)tohost_data >> 8;
-      printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
-      break;
-    case 0x12:
-      fuzz_end_addr = (int64_t)tohost_data >> 8;
-      printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);     
-      break;
+    default:
+      ;  // TODO
   }
 }
 
