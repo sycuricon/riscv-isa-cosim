@@ -547,10 +547,22 @@ void decode_inst_oprand(masker_inst_t* dec) {
 }
 
 
+rv_inst masker_inst_t::bare_op() {
+  rv_inst op;
+  if ((inst & OP_MASK) == OP_32)
+    op = inst & 0x7f;
+  else
+    op = inst & OP_MASK;
+    return op;
+}
 
 void masker_inst_t::mutation(bool debug) {
   if (history.find(pc) != history.end())  // already mutated
     return;
+
+  static std::vector<rv_inst> amo_list = {0x2, 0x3, 0x1, 0x0, 0x4, 0xc, 0x8, 0x10, 0x14, 0x18, 0x1c};
+  rv_inst bop = bare_op();
+  int type;
 
   if (debug)
     printf("\e[1;35m[CJ] insn mutation:  %s @ %08lx\n", rv_opcode_name[op], inst);
@@ -561,8 +573,44 @@ void masker_inst_t::mutation(bool debug) {
 
     switch (arg->name) {
       // functions
-      case rv_field_funct3: 
+      case rv_field_funct3:
+        // b type
+        switch (bop) {
+          case 0x63:  // 1100011  branch
+            arg->value = randBits(3);
+            break;
+          case 0x03:  // 0000011  load
+            arg->value = randInt(0, 7);   // 7 is illegal
+            break;
+          case 0x23:  // 0100011  store
+            arg->value = randInt(0, 4);  // 4 is illegal
+            break;
+          case 0x13:  // 0010011  alu_i
+            arg->value = randBits(3);
+            break;
+          case 0x33:  // 0110011  alu_r
+            arg->value = randBits(3);
+            break;
+          case 0x1b:  // 0011011  alu_iw
+            arg->value = randBits(3);
+            break;
+          case 0x3b:  // 0111011  alu_rw
+            arg->value = randBits(3);
+            break;
+          case 0x53:  // 1010011  f
+            arg->value = randBits(2);
+            break;
+
+        }
+        break;
+
       case rv_field_funct7:
+        switch (bop) {
+          case 0x2f:  // 0101111 amo
+            arg->value = amo_list[randInt(0, amo_list.size()-1)];
+        }
+        break;
+
       case rv_field_funct5:
       case rv_field_funct2:
       case rv_field_c_funct3:
@@ -572,7 +620,7 @@ void masker_inst_t::mutation(bool debug) {
 
       // registers
       case rv_field_rd:
-        if (rand2(random)) {  // WAW
+        if (randBits(3) == 0) {  // WAW
           arg->value = random_rd_in_pipeline();
         } else {
           arg->value = randBits(5);
@@ -584,7 +632,10 @@ void masker_inst_t::mutation(bool debug) {
       case rv_field_rs3:
       case rv_field_c_rs1:
       case rv_field_c_rs2:
-        if (rand2(random)) {  // RAW
+        type = randBits(3);
+        if (type == 0) {  // Rand
+          arg->value = randBits(5);
+        } else if (type <= 2) { // RAW
           arg->value = random_rd_in_pipeline();
         } else {  // rd_with_type
           magic_type *t = &magic_void;
@@ -621,16 +672,8 @@ void masker_inst_t::mutation(bool debug) {
       // FCVT
       case rv_field_rm:
         switch(op) {
-          case rv_op_fmv_d_x:
-          case rv_op_fmv_q_x:
-          case rv_op_fmv_w_x:
-          case rv_op_fmv_x_d:
-          case rv_op_fmv_x_q:
-          case rv_op_fmv_x_w:
-            if (rand2(random))
-              arg->value = randBits(3);
-            break;
           default:
+          if (rand2(random))
             arg->value = randBits(3);
         }
         break;
@@ -726,7 +769,7 @@ void masker_inst_t::mutation(bool debug) {
         break;
 
       default:
-        arg->value ++;
+        break;
     }
 
     if (debug) {
@@ -783,7 +826,6 @@ int masker_inst_t::random_rd_in_pipeline() {
 }
 
 int masker_inst_t::rd_with_type(magic_type *t) {
-  printf("[CJ] Require reg type %s, ", t->name.c_str());
   std::vector<int> buf;
   for (int i = 31; i > 0; i--) {
     if (type[i]->is_child_of(t)) {
@@ -791,7 +833,6 @@ int masker_inst_t::rd_with_type(magic_type *t) {
     }
   }
   int n = buf.size();
-  printf("%d found.\n", n);
   if (t != &magic_void)
     simulator->record_rd_mutation_stats(n);
 

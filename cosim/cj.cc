@@ -199,12 +199,13 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
 }
 
 cosim_cj_t::~cosim_cj_t() {
+  /*
   printf("[CJ] Matched reg count stat:\n");
   for (size_t i = 0; i <= 32; i++) {
     printf("[CJ] %d match(es): %u\n", i, matched_reg_count_stat[i]);
   }
   printf("\n");
-
+  */
   for (size_t i = 0; i < procs.size(); i++)
     delete procs[i];
   delete debug_mmu;
