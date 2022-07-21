@@ -196,9 +196,9 @@ private:
 
 extern const std::vector<magic_type*> magic_generator_type;
 
-class magic_t : public abstract_device_t {
+class magic_t {
  public:
-  magic_t(): seed(0), ignore(false), rand2(0, 1), generator({
+  magic_t(): seed(0), rand2(0, 1), generator({
     std::bind(&magic_t::rdm_dword, this, 64, 0),
     std::bind(&magic_t::rdm_dword, this, 32, 1),
     std::bind(&magic_t::rdm_float, this, -1, -1, 23, 31),
@@ -209,17 +209,13 @@ class magic_t : public abstract_device_t {
   bool load(reg_t addr, size_t len, uint8_t* bytes) {
     reg_t id = addr / 8;
     reg_t tmp = id < generator.size() ? generator[id]() : 0;
-    ignore = true;
     memcpy(bytes, &tmp, len);
     // printf("[CJ] Magic read: %016lx[%ld] = %016lx\n", addr, len, tmp);
     return true;
   }
   
-  bool store(reg_t addr, size_t len, const uint8_t* bytes) { return true; }
   size_t size() { return 4096; }
   void set_seed(reg_t new_seed) { seed = new_seed; random.seed(seed); }
-  bool get_ignore() { return ignore; }
-  void clear_ignore() { ignore = false; }
 
   reg_t rdm_dword(int width, int sgned);                    // 1 for signed, 0 for unsigned, -1 for random
   reg_t rdm_float(int type, int sgn, int botE, int botS);   // 0 for 0, 1 for INF, 2 for qNAN, 3 for sNAN, 4 for normal, 5 for tiny, -1 for random
@@ -227,7 +223,6 @@ class magic_t : public abstract_device_t {
 
  private:
   reg_t seed;
-  bool ignore;
 
   std::default_random_engine random;
   std::uniform_int_distribution<reg_t> rand2;

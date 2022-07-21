@@ -549,11 +549,12 @@ void decode_inst_oprand(masker_inst_t* dec) {
 
 rv_inst masker_inst_t::bare_op() {
   rv_inst op;
-  if ((inst & OP_MASK) == OP_32)
+  if ((inst & OP_MASK) == OP_32) {
     op = inst & 0x7f;
-  else
+  } else {
     op = inst & OP_MASK;
-    return op;
+  }
+  return op;
 }
 
 void masker_inst_t::mutation(bool debug) {
@@ -639,11 +640,12 @@ void masker_inst_t::mutation(bool debug) {
           arg->value = random_rd_in_pipeline();
         } else {  // rd_with_type
           magic_type *t = &magic_void;
-          if ( rv_op_lb <= op && op <= rv_op_sw || 
-              rv_op_lwu <= op && op <= rv_op_sd ||
-              rv_op_ldu <= op && op <= rv_op_sq ||
-              op == rv_op_jalr)
+          if ((rv_op_lb <= op && op <= rv_op_sw)  || 
+              (rv_op_lwu <= op && op <= rv_op_sd) ||
+              (rv_op_ldu <= op && op <= rv_op_sq) ||
+              (op == rv_op_jalr)) {
             t = &magic_address;
+          }
           arg->value = rd_with_type(t);
         }
         break;
@@ -865,10 +867,10 @@ void masker_inst_t::record_to_history() {
 
   // save type
   if (rd != 0) {
-    if (op == rv_op_ld && rs1 == 0) {  // ld
-      int64_t id = imm / 8;
-      if (0 <= id && id < magic_generator_type.size())
-        type[rd] = magic_generator_type[id];
+    if (op == rv_op_ld && rs1 == 0 && 0 <= imm) {  // ld
+      size_t index = imm / 8;
+      if (index < magic_generator_type.size())
+        type[rd] = magic_generator_type[index];
       else
         type[rd] = &magic_void;
     } else if (op == rv_op_jal || op == rv_op_jalr) {  // jump
