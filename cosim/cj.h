@@ -26,7 +26,7 @@ public:
       varch(DEFAULT_VARCH), logfile(stderr), dtsfile(NULL), elffile(NULL),
       mem_base(DRAM_BASE), mem_size(2048),
       cycle_freq(1000000000), time_freq_count(100),
-      start_pc(-1), verbose(false)
+      start_pc(-1), verbose(false), smode_prefix(0xffffffffffff0000UL)
       {}
 
   cfg_arg_t<const char *> varch;
@@ -39,6 +39,7 @@ public:
   cfg_arg_t<size_t> time_freq_count;
   cfg_arg_t<reg_t> start_pc;
   cfg_arg_t<bool> verbose;
+  cfg_arg_t<reg_t> smode_prefix;
 };
 
 inline bool operator==(const float128_t& lhs, const float128_t& rhs) {
@@ -123,8 +124,11 @@ public:
   const char* get_symbol(uint64_t addr);
 
   uint64_t get_random_executable_address(std::default_random_engine &random);
-  bool in_fuzz_range(uint64_t addr) {
-    return fuzz_start_addr <= addr && addr < fuzz_end_addr;
+  bool in_fuzz_loop_range(uint64_t addr) {
+    return fuzz_loop_entry_addr <= addr && addr < fuzz_loop_exit_addr;
+  }
+  bool in_fuzz_handler_range(uint64_t addr) {
+    return fuzz_handler_start_addr <= addr && addr < fuzz_handler_end_addr;
   }
 
   // chunked_memif_t virtual function
@@ -171,8 +175,10 @@ private:
   bool cj_debug;
   bool mmio_access;
   addr_t tohost_addr;
-  addr_t fuzz_start_addr;
-  addr_t fuzz_end_addr;
+  addr_t fuzz_loop_entry_addr;
+  addr_t fuzz_loop_exit_addr;
+  addr_t fuzz_handler_start_addr;
+  addr_t fuzz_handler_end_addr;
   reg_t tohost_data;
   std::map<uint64_t, std::string> addr2symbol;
 

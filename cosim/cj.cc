@@ -137,6 +137,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     cpu_idx++;
   }
 
+  // magic device, error device, rom*2, clint, uart, plic
   mmios.push_back(new dummy_device_t(0x0UL, 0x1000UL));
   mmios.push_back(new dummy_device_t(0x3000UL, 0x1000UL));
   mmios.push_back(new dummy_device_t(0x10000UL, 0x10000UL));
@@ -162,9 +163,13 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   fprintf(stderr, "\t\tpowered by Spike " SPIKE_VERSION "\n");
   fprintf(stderr, "- core %ld, isa: %s %s %s\n",
           cfg.nprocs(), cfg.isa(), cfg.priv(), cfg.varch());
+  fprintf(stderr, "- elf file: %s\n", cfg.elffile());
   fprintf(stderr, "- memory configuration: 0x%lx 0x%lx, tohost: 0x%lx\n",
           cfg.mem_base(), cfg.mem_size() << 20, tohost_addr);
-  fprintf(stderr, "- elf file: %s\n", cfg.elffile());
+  fprintf(stderr, "- fuzz information: [Handler] 0x%lx page (0x%lx 0x%lx)\n",
+          (fuzz_handler_end_addr-fuzz_handler_start_addr), fuzz_handler_start_addr, fuzz_handler_end_addr);
+  fprintf(stderr, "                    [Payload] 0x%lx page (0x%lx 0x%lx)\n",
+          (fuzz_loop_exit_addr-fuzz_loop_entry_addr), fuzz_loop_entry_addr, fuzz_loop_exit_addr);  
   procs[0]->get_state()->pc = cfg.mem_base();
 }
 
@@ -191,11 +196,34 @@ void cosim_cj_t::load_testcase(const char* elffile) {
     tohost_addr = symbols["tohost"];
   else
     fprintf(stderr, "warning: tohost symbols not in ELF; can't communicate with target\n");
-  
+
+  if (symbols.count("_fuzz_handler_start"))
+    fuzz_handler_start_addr = symbols["_fuzz_handler_start"];
+  else
+    fuzz_handler_start_addr = 0;
+  if (symbols.count("_fuzz_handler_end"))
+    fuzz_handler_end_addr = symbols["_fuzz_handler_end"];
+  else
+    fuzz_handler_end_addr = 0;
+  if (symbols.count("_fuzz_main_loop_entry"))
+    fuzz_loop_entry_addr = symbols["_fuzz_main_loop_entry"];
+  else
+    fuzz_loop_entry_addr = 0;
+  if (symbols.count("_fuzz_main_loop_exit"))
+    fuzz_loop_exit_addr = symbols["_fuzz_main_loop_exit"];
+  else
+    fuzz_loop_exit_addr = 0;
+
   for (auto i : symbols) {
     auto it = addr2symbol.find(i.second);
-    if ( it == addr2symbol.end())
+    if (it == addr2symbol.end())
       addr2symbol[i.second] = i.first;
+    
+    if (i.first.find("fuzztext_") != std::string::npos) {
+
+    } else if (i.first.find("fuzzdata_") != std::string::npos) {
+
+    }
   }
 }
 
@@ -205,10 +233,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   state_t* s = p->get_state();
   mmu_t* mmu = p->get_mmu();
 
-  // printf("[CJ] mutation condition: %d %016lx %016lx %016lx\n", 
-          // start_randomize, s->pc, fuzz_start_addr, fuzz_end_addr);
-
-  if (start_randomize && (s->pc <= fuzz_end_addr && s->pc >= fuzz_start_addr)) {
+  if (start_randomize && !in_fuzz_handler_range(s->pc)) {
     mmu->set_insn_rdm(true);
   } else {
     mmu->set_insn_rdm(false);
@@ -240,7 +265,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
 
   // update tohost
   auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
-  memcpy(&tohost_data, &data, sizeof data);
+  memcpy(&tohost_data, &data, sizeof(data));
   update_tohost_info();
   debug_mmu->store_uint64(tohost_addr, 0);
 
@@ -364,7 +389,7 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
   // Mutate
   if (hint_insn(in)) {
     new_inst = in;
-  } else if (start_randomize && (pc <= fuzz_end_addr && pc >= fuzz_start_addr)) {
+  } else if (start_randomize && !in_fuzz_handler_range(pc)) {
     insn.mutation(cj_debug);
     new_inst = insn.encode(cj_debug);
   } else {
@@ -388,7 +413,7 @@ uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
   if (read_select == MAGIC_EPC_NEXT) {   // step to next inst
       processor_t* p = get_core(0);
       auto mepc = p->get_csr(CSR_MEPC);
-      if (in_fuzz_range(mepc)) {  // step to the next inst
+      if (in_fuzz_loop_range(mepc)) {  // step to the next inst
         int step = p->mmu->test_insn_length(mepc);
         if (cj_debug) printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
         return mepc + step;
@@ -406,14 +431,14 @@ uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
 void cosim_cj_t::update_tohost_info() {
   // tohost_addr = 0x80001000
   switch (tohost_data & 0xff) {
-    case 0x02:
-      fuzz_start_addr = (int64_t)tohost_data >> 8;
-      printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
-      break;
-    case 0x12:
-      fuzz_end_addr = (int64_t)tohost_data >> 8;
-      printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);     
-      break;
+    // case 0x02:
+    //   fuzz_start_addr = (int64_t)tohost_data >> 8;
+    //   printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
+    //   break;
+    // case 0x12:
+    //   fuzz_end_addr = (int64_t)tohost_data >> 8;
+    //   printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);     
+    //   break;
   }
 }
 
@@ -496,7 +521,7 @@ const char* cosim_cj_t::get_symbol(uint64_t addr) {
 uint64_t cosim_cj_t::get_random_executable_address(std::default_random_engine &random) {
   std::vector<uint64_t> legal;
   for (auto &p : addr2symbol) {
-    if (in_fuzz_range(p.first)) legal.push_back(p.first);
+    if (in_fuzz_loop_range(p.first)) legal.push_back(p.first);
   }
 
   // TODO: add special patern in label to speedup
