@@ -11,6 +11,7 @@
 #include "processor.h"
 #include "magic_device.h"
 
+#include <set>
 #include <queue>
 #include <random>
 #include <functional>
@@ -177,10 +178,15 @@ private:
   addr_t tohost_addr;
   addr_t fuzz_loop_entry_addr;
   addr_t fuzz_loop_exit_addr;
+  size_t fuzz_loop_page_num;
   addr_t fuzz_handler_start_addr;
   addr_t fuzz_handler_end_addr;
+  size_t fuzz_handler_page_num;
   reg_t tohost_data;
+
   std::map<uint64_t, std::string> addr2symbol;
+  std::map<uint64_t, std::set<uint64_t>> text_label;
+  std::set<uint64_t> data_label;
 
   void reset();
   void idle();

@@ -166,11 +166,25 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   fprintf(stderr, "- elf file: %s\n", cfg.elffile());
   fprintf(stderr, "- memory configuration: 0x%lx 0x%lx, tohost: 0x%lx\n",
           cfg.mem_base(), cfg.mem_size() << 20, tohost_addr);
-  fprintf(stderr, "- fuzz information: [Handler] 0x%lx page (0x%lx 0x%lx)\n",
-          (fuzz_handler_end_addr-fuzz_handler_start_addr), fuzz_handler_start_addr, fuzz_handler_end_addr);
-  fprintf(stderr, "                    [Payload] 0x%lx page (0x%lx 0x%lx)\n",
-          (fuzz_loop_exit_addr-fuzz_loop_entry_addr), fuzz_loop_entry_addr, fuzz_loop_exit_addr);  
+  fprintf(stderr, "- fuzz information: [Handler] %ld page (0x%lx 0x%lx)\n",
+          fuzz_handler_page_num, fuzz_handler_start_addr, fuzz_handler_end_addr);
+  fprintf(stderr, "                    [Payload] %ld page (0x%lx 0x%lx)\n",
+          fuzz_loop_page_num, fuzz_loop_entry_addr, fuzz_loop_exit_addr);  
   procs[0]->get_state()->pc = cfg.mem_base();
+
+  for (auto it = text_label.begin(); it != text_label.end(); it++) {
+      std::cout << std::hex << it->first << " => ";
+      std::set<uint64_t> st = it->second;
+      for (auto it = st.begin(); it != st.end(); it++) {
+          std::cout << std::hex << (*it) << ' ';
+      }
+      std::cout << '\n';
+  }
+
+  for (auto it = data_label.begin(); it != data_label.end(); it++) {
+      std::cout << std::hex << (*it) << ' ';
+  }
+  std::cout << '\n';
 }
 
 cosim_cj_t::~cosim_cj_t() {
@@ -214,15 +228,18 @@ void cosim_cj_t::load_testcase(const char* elffile) {
   else
     fuzz_loop_exit_addr = 0;
 
+  fuzz_loop_page_num = (fuzz_loop_exit_addr - fuzz_loop_entry_addr + 0xFFF) / 0x1000;
+  fuzz_handler_page_num = (fuzz_handler_end_addr - fuzz_handler_start_addr + 0xFFF) / 0x1000;
+
   for (auto i : symbols) {
     auto it = addr2symbol.find(i.second);
     if (it == addr2symbol.end())
       addr2symbol[i.second] = i.first;
     
     if (i.first.find("fuzztext_") != std::string::npos) {
-
+      text_label[i.second >> 12 << 12].insert(i.second);
     } else if (i.first.find("fuzzdata_") != std::string::npos) {
-
+      data_label.insert(i.second);
     }
   }
 }
