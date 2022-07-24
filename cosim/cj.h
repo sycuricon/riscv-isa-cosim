@@ -28,7 +28,7 @@ public:
       varch(DEFAULT_VARCH), logfile(stderr), dtsfile(NULL), elffile(NULL),
       mem_base(DRAM_BASE), mem_size(2048),
       cycle_freq(1000000000), time_freq_count(100),
-      start_pc(-1), verbose(false), smode_prefix(0xffffffffffff0000UL)
+      start_pc(-1), verbose(false), va_mask(0xffffffffffe00000UL)
       {}
 
   cfg_arg_t<const char *> varch;
@@ -41,7 +41,7 @@ public:
   cfg_arg_t<size_t> time_freq_count;
   cfg_arg_t<reg_t> start_pc;
   cfg_arg_t<bool> verbose;
-  cfg_arg_t<reg_t> smode_prefix;
+  cfg_arg_t<reg_t> va_mask;
 };
 
 inline bool operator==(const float128_t& lhs, const float128_t& rhs) {
@@ -195,6 +195,8 @@ private:
   void idle();
 
   bool start_randomize;
+  reg_t va_mask;
+  bool va_enable;
 };
 
 class dummy_device_t : public abstract_device_t {

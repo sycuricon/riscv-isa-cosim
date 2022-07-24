@@ -26,6 +26,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   sout_.rdbuf(std::cerr.rdbuf());
 
   cj_debug = cfg.verbose();
+  va_mask = cfg.va_mask();
   // blind = true;
   // cj_debug = false;
 
@@ -223,15 +224,24 @@ void cosim_cj_t::load_testcase(const char* elffile) {
   fuzz_loop_page_num = (fuzz_loop_exit_addr - fuzz_loop_entry_addr + 0xFFF) / 0x1000;
   fuzz_handler_page_num = (fuzz_handler_end_addr - fuzz_handler_start_addr + 0xFFF) / 0x1000;
 
+  va_enable = !!symbols.count("vm_boot");
   for (auto i : symbols) {
     auto it = addr2symbol.find(i.second);
     if (it == addr2symbol.end())
       addr2symbol[i.second] = i.first;
     
     if (i.first.find("fuzztext_") != std::string::npos) {
-      text_label.push_back(i.second);
+      if (va_enable) {
+        text_label.push_back(i.second - fuzz_loop_entry_addr + 0x1000);
+      } else {
+        text_label.push_back(i.second);
+      }
     } else if (i.first.find("fuzzdata_") != std::string::npos) {
-      data_label.push_back(i.second);
+      if (va_enable) {
+        data_label.push_back(i.second - fuzz_loop_entry_addr + 0x1000);
+      } else {
+        data_label.push_back(i.second);
+      }
     }
   }
 }
