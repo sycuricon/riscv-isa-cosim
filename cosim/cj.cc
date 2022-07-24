@@ -157,8 +157,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   magic.reset(new magic_t());
   masker_inst_t::reset_mutation_history();
 
-
- // done
+  // done
   fprintf(stderr, "[*] `Commit & Judge' General Co-simulation Framework\n");
   fprintf(stderr, "\t\tpowered by Spike " SPIKE_VERSION "\n");
   fprintf(stderr, "- core %ld, isa: %s %s %s\n",
@@ -173,18 +172,11 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   procs[0]->get_state()->pc = cfg.mem_base();
 
   for (auto it = text_label.begin(); it != text_label.end(); it++) {
-      std::cout << std::hex << it->first << " => ";
-      std::set<uint64_t> st = it->second;
-      for (auto it = st.begin(); it != st.end(); it++) {
-          std::cout << std::hex << (*it) << ' ';
-      }
-      std::cout << '\n';
-  }
-
+      std::cout << std::hex << (*it) << ' ';
+  } std::cout << '\n';
   for (auto it = data_label.begin(); it != data_label.end(); it++) {
       std::cout << std::hex << (*it) << ' ';
-  }
-  std::cout << '\n';
+  } std::cout << '\n';
 }
 
 cosim_cj_t::~cosim_cj_t() {
@@ -237,9 +229,9 @@ void cosim_cj_t::load_testcase(const char* elffile) {
       addr2symbol[i.second] = i.first;
     
     if (i.first.find("fuzztext_") != std::string::npos) {
-      text_label[i.second >> 12 << 12].insert(i.second);
+      text_label.push_back(i.second);
     } else if (i.first.find("fuzzdata_") != std::string::npos) {
-      data_label.insert(i.second);
+      data_label.push_back(i.second);
     }
   }
 }
@@ -426,23 +418,7 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
 }
 
 uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
-  uint64_t buf;
-  if (read_select == MAGIC_EPC_NEXT) {   // step to next inst
-      processor_t* p = get_core(0);
-      auto mepc = p->get_csr(CSR_MEPC);
-      if (in_fuzz_loop_range(mepc)) {  // step to the next inst
-        int step = p->mmu->test_insn_length(mepc);
-        if (cj_debug) printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
-        return mepc + step;
-      } else { // load a randomly selected target
-        if (cj_debug) printf("[CJ] mepc %016lx out of fuzz range\n", mepc);
-        magic->load(MAGIC_RDM_ADDR, 8, (uint8_t*)(&buf));
-        return buf;
-      }
-  } else {
-      magic->load(read_select, 8, (uint8_t*)(&buf));
-      return buf;
-  }
+  return magic->load(read_select);
 }
 
 void cosim_cj_t::update_tohost_info() {
@@ -466,14 +442,12 @@ void cosim_cj_t::read_chunk(addr_t taddr, size_t len, void* dst) {
   auto data = debug_mmu->to_target(debug_mmu->load_uint64(taddr));
   memcpy(dst, &data, sizeof data);
 }
-
 void cosim_cj_t::write_chunk(addr_t taddr, size_t len, const void* src) {
   assert(len == 8);
   target_endian<uint64_t> data;
   memcpy(&data, src, sizeof data);
   debug_mmu->store_uint64(taddr, debug_mmu->from_target(data));
 }
-
 void cosim_cj_t::clear_chunk(addr_t taddr, size_t len) {
   char zeros[chunk_max_size()];
   memset(zeros, 0, chunk_max_size());
@@ -481,11 +455,9 @@ void cosim_cj_t::clear_chunk(addr_t taddr, size_t len) {
   for (size_t pos = 0; pos < len; pos += chunk_max_size())
     write_chunk(taddr + pos, std::min(len - pos, chunk_max_size()), zeros);
 }
-
 void cosim_cj_t::set_target_endianness(memif_endianness_t endianness) {
   assert(endianness == memif_endianness_little);
 }
-
 memif_endianness_t cosim_cj_t::get_target_endianness() const {
   return memif_endianness_little;
 }
@@ -494,7 +466,6 @@ memif_endianness_t cosim_cj_t::get_target_endianness() const {
 static bool paddr_ok(reg_t addr) {
   return (addr >> MAX_PADDR_BITS) == 0;
 }
-
 char* cosim_cj_t::addr_to_mem(reg_t addr) {
   if (!paddr_ok(addr))
     return NULL;
@@ -504,7 +475,6 @@ char* cosim_cj_t::addr_to_mem(reg_t addr) {
       return mem->contents(addr - desc.first);
   return NULL;
 }
-
 bool cosim_cj_t::mmio_load(reg_t addr, size_t len, uint8_t* bytes) {
   if (addr + len < addr || !paddr_ok(addr + len - 1))
     return false;
@@ -516,18 +486,15 @@ bool cosim_cj_t::mmio_load(reg_t addr, size_t len, uint8_t* bytes) {
     return false;
   }
 }
-
 bool cosim_cj_t::mmio_store(reg_t addr, size_t len, const uint8_t* bytes) {
   if (addr + len < addr || !paddr_ok(addr + len - 1))
     return false;
   return bus.store(addr, len, bytes);
 }
-
 void cosim_cj_t::proc_reset(unsigned id) {
   // not implement here
   printf("ToDo: cosim_cj_t::proc_reset\n");
 }
-
 const char* cosim_cj_t::get_symbol(uint64_t addr) {
   auto it = addr2symbol.find(addr);
   if(it == addr2symbol.end())
@@ -535,21 +502,43 @@ const char* cosim_cj_t::get_symbol(uint64_t addr) {
   return it->second.c_str();
 }
 
-uint64_t cosim_cj_t::get_random_executable_address(std::default_random_engine &random) {
-  std::vector<uint64_t> legal;
-  for (auto &p : addr2symbol) {
-    if (in_fuzz_loop_range(p.first)) legal.push_back(p.first);
-  }
-
-  // TODO: add special patern in label to speedup
-  if (legal.size() > 0) {
-    std::uniform_int_distribution<uint64_t> rand(0, legal.size() - 1);
-    auto select = legal[rand(random)];
-    if (cj_debug) printf("[CJ] generated random label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
-    return select;
-  }
-  else 
+// magic device call back function
+uint64_t cosim_cj_t::get_random_text_address(std::default_random_engine &random) {
+  if (text_label.size() == 0) {
     return 0x20220718;
+  }
+  std::uniform_int_distribution<uint64_t> rand_label(0, text_label.size() - 1);
+  auto select = text_label[rand_label(random)];
+  if (cj_debug) printf("[CJ] generated random text label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
+
+  processor_t* p = get_core(0);
+  state_t* s = p->get_state();
+  printf("pc 0x%lx  mepc 0x%lx  sepc 0x%lx\n", s->pc, s->mepc->read(), s->sepc->read());
+
+  return select;
+}
+
+uint64_t cosim_cj_t::get_random_data_address(std::default_random_engine &random) {
+  if (data_label.size() == 0) {
+    return 0x20220723;
+  }
+  std::uniform_int_distribution<uint64_t> rand_page(0, data_label.size() - 1);
+  auto select = data_label[rand_page(random)];
+  if (cj_debug) printf("[CJ] generated random data page:%016lx\n", select);
+  return select;
+}
+
+uint64_t cosim_cj_t::get_exception_return_address(std::default_random_engine &random) {
+  processor_t* p = get_core(0);
+  auto mepc = p->get_csr(CSR_MEPC);
+  if (in_fuzz_loop_range(mepc)) {  // step to the next inst
+    int step = p->mmu->test_insn_length(mepc);
+    if (cj_debug) printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
+    return mepc + step;
+  } else { // load a randomly selected target
+    if (cj_debug) printf("[CJ] mepc %016lx out of fuzz range\n", mepc);
+    return magic->load(MAGIC_RDM_TEXT_ADDR);
+  }
 }
 
 void cosim_cj_t::record_rd_mutation_stats(unsigned int matched_reg_count) {
@@ -557,7 +546,7 @@ void cosim_cj_t::record_rd_mutation_stats(unsigned int matched_reg_count) {
 }
 
 
-
+// Magic device randomization function
 reg_t magic_t::rdm_dword(int width, int sgned) { // 1 for signed, 0 for unsigned, -1 for random
   std::uniform_int_distribution<reg_t> rand(0, (reg_t)(-1));
   reg_t mask = width == 64 ? -1 : (1LL << width)-1;
@@ -589,17 +578,25 @@ reg_t magic_t::rdm_float(int type, int sgn, int botE, int botS) {   // 0 for 0, 
   }
 }
 
-reg_t magic_t::rdm_address(int r, int w, int x, int isLabel) {  // 1 for yes, 0 for no, -1 for random
-  return simulator->get_random_executable_address(random);
+reg_t magic_t::rdm_address(int r, int w, int x) {  // 1 for yes, 0 for no, -1 for random
+  if (x)
+    return simulator->get_random_text_address(random);
+  else
+    return simulator->get_random_data_address(random);
 }
 
-const std::vector<magic_type*> magic_generator_type({
+reg_t magic_t::rdm_exp_ret() {
+  return simulator->get_exception_return_address(random);
+}
+
+  const std::vector<magic_type*> magic_generator_type({
   &magic_int,
   &magic_int,
   &magic_float,
   &magic_float,
-  &magic_address,
-  &magic_fuzz_address,
+  &magic_text_address,
+  &magic_data_address,
+  &magic_text_address
 });
 
 //__attribute__((weak)) int main() {

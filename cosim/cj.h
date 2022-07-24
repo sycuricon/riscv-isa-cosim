@@ -12,6 +12,7 @@
 #include "magic_device.h"
 
 #include <set>
+#include <array>
 #include <queue>
 #include <random>
 #include <functional>
@@ -116,6 +117,9 @@ public:
   void cosim_raise_trap(int hartid, reg_t cause);
   uint64_t cosim_randomizer_insn(uint64_t in, uint64_t pc);
   uint64_t cosim_randomizer_data(unsigned int read_select);
+  uint64_t get_random_text_address(std::default_random_engine &random);
+  uint64_t get_random_data_address(std::default_random_engine &random);
+  uint64_t get_exception_return_address(std::default_random_engine &random);
 
   // simif_t virtual function
   char* addr_to_mem(reg_t addr);
@@ -124,7 +128,6 @@ public:
   void proc_reset(unsigned id);
   const char* get_symbol(uint64_t addr);
 
-  uint64_t get_random_executable_address(std::default_random_engine &random);
   bool in_fuzz_loop_range(uint64_t addr) {
     return fuzz_loop_entry_addr <= addr && addr < fuzz_loop_exit_addr;
   }
@@ -185,8 +188,8 @@ private:
   reg_t tohost_data;
 
   std::map<uint64_t, std::string> addr2symbol;
-  std::map<uint64_t, std::set<uint64_t>> text_label;
-  std::set<uint64_t> data_label;
+  std::vector<uint64_t> text_label;
+  std::vector<uint64_t> data_label;
 
   void reset();
   void idle();
@@ -210,20 +213,23 @@ extern const std::vector<magic_type*> magic_generator_type;
 
 class magic_t {
  public:
-  magic_t(): seed(0), rand2(0, 1), generator({
-    std::bind(&magic_t::rdm_dword, this, 64, 0),
-    std::bind(&magic_t::rdm_dword, this, 32, 1),
-    std::bind(&magic_t::rdm_float, this, -1, -1, 23, 31),
-    std::bind(&magic_t::rdm_float, this, -1, -1, 52, 63),
-    std::bind(&magic_t::rdm_address, this, -1, -1, -1, -1)
-  }){}
+  magic_t(): seed(0), rand2(0, 1) {
+    generator[MAGIC_RANDOM/8]         = std::bind(&magic_t::rdm_dword, this, 64, 0);
+    generator[MAGIC_RDM_WORD/8]       = std::bind(&magic_t::rdm_dword, this, 32, 1);
+    generator[MAGIC_RDM_FLOAT/8]      = std::bind(&magic_t::rdm_float, this, -1, -1, 23, 31);
+    generator[MAGIC_RDM_DOUBLE/8]     = std::bind(&magic_t::rdm_float, this, -1, -1, 52, 63);
+    generator[MAGIC_RDM_TEXT_ADDR/8]  = std::bind(&magic_t::rdm_address, this, 1, 1, 1);
+    generator[MAGIC_RDM_DATA_ADDR/8]  = std::bind(&magic_t::rdm_address, this, 1, 1, 0);
+    generator[MAGIC_EPC_NEXT/8]       = std::bind(&magic_t::rdm_exp_ret, this);
+    generator[MAGIC_EPC_MAP/8]        = std::bind(&magic_t::rdm_dummy, this);
+    generator[MAGIC_RDM_PTE/8]        = std::bind(&magic_t::rdm_dummy, this);
+  }
   
-  bool load(reg_t addr, size_t len, uint8_t* bytes) {
+  reg_t load(reg_t addr) {
     reg_t id = addr / 8;
     reg_t tmp = id < generator.size() ? generator[id]() : 0;
-    memcpy(bytes, &tmp, len);
-    // printf("[CJ] Magic read: %016lx[%ld] = %016lx\n", addr, len, tmp);
-    return true;
+    printf("[CJ] Magic read: %016lx -> %016lx\n", addr, tmp);
+    return tmp;
   }
   
   size_t size() { return 4096; }
@@ -231,14 +237,16 @@ class magic_t {
 
   reg_t rdm_dword(int width, int sgned);                    // 1 for signed, 0 for unsigned, -1 for random
   reg_t rdm_float(int type, int sgn, int botE, int botS);   // 0 for 0, 1 for INF, 2 for qNAN, 3 for sNAN, 4 for normal, 5 for tiny, -1 for random
-  reg_t rdm_address(int r, int w, int x, int isLabel);      // 1 for yes, 0 for no, -1 for random
+  reg_t rdm_address(int r, int w, int x);                   // 1 for yes, 0 for no, -1 for random
+  reg_t rdm_exp_ret();
+  reg_t rdm_dummy() { return 0; }
 
  private:
   reg_t seed;
 
   std::default_random_engine random;
   std::uniform_int_distribution<reg_t> rand2;
-  std::vector<std::function<reg_t()>> generator;
+  std::array<std::function<reg_t()>, MAX_MAGIC_SPACE/8> generator;
 };
 
 extern cosim_cj_t* simulator;

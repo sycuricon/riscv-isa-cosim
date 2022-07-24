@@ -17,7 +17,10 @@ extern magic_type magic_void;
 extern magic_type magic_int;
 extern magic_type magic_float;
 extern magic_type magic_zero;
-extern magic_type magic_address;
-extern magic_type magic_fuzz_address;
+extern magic_type magic_r_address;
+extern magic_type magic_w_address;
+extern magic_type magic_x_address;
+extern magic_type magic_text_address;
+extern magic_type magic_data_address;
 
 #endif
