@@ -6,15 +6,15 @@
 #include "processor.h"
 
 mmu_t::mmu_t(simif_t* sim, processor_t* proc)
- : sim(sim), proc(proc),
+ : sim(sim), proc(proc), enable_insn_rdm(false),
 #ifdef RISCV_ENABLE_DUAL_ENDIAN
   target_big_endian(false),
 #endif
   check_triggers_fetch(false),
   check_triggers_load(false),
   check_triggers_store(false),
-  matched_trigger(NULL),
-  enable_insn_rdm(false)
+  matched_trigger(NULL)
+  
 {
   flush_tlb();
   yield_load_reservation();

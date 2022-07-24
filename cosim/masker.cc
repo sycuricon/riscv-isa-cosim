@@ -639,13 +639,29 @@ void masker_inst_t::mutation(bool debug) {
         } else if (type <= 2) { // RAW
           arg->value = random_rd_in_pipeline();
         } else {  // rd_with_type
-          magic_type *t = &magic_void;
-          if ((rv_op_lb <= op && op <= rv_op_sw)  || 
-              (rv_op_lwu <= op && op <= rv_op_sd) ||
-              (rv_op_ldu <= op && op <= rv_op_sq) ||
-              (op == rv_op_jalr)) {
-            t = &magic_address;
+          magic_type *t;
+          switch (op) {
+            case rv_op_lb: case rv_op_lh: case rv_op_lw: case rv_op_lbu: case rv_op_lhu:case rv_op_lwu: case rv_op_ld: case rv_op_ldu: case rv_op_lq: 
+            case rv_op_lr_w: case rv_op_lr_d: case rv_op_lr_q:
+            case rv_op_flw: case rv_op_fld: case rv_op_flq:
+            case rv_op_c_lw: case rv_op_c_flw: case rv_op_c_ld: case rv_op_c_fld: case rv_op_c_lq:
+            case rv_op_c_lwsp: case rv_op_c_flwsp: case rv_op_c_ldsp: case rv_op_c_fldsp: case rv_op_c_lqsp:
+              t = &magic_r_address; break;
+            case rv_op_sd: case rv_op_sq: case rv_op_sb: case rv_op_sh: case rv_op_sw: 
+            case rv_op_sc_w: case rv_op_sc_d: case rv_op_sc_q:
+            case rv_op_fsw: case rv_op_fsd: case rv_op_fsq:
+            case rv_op_c_sw:case rv_op_c_fsw: case rv_op_c_sd: case rv_op_c_fsd: case rv_op_c_sq:
+            case rv_op_c_swsp: case rv_op_c_fswsp: case rv_op_c_sdsp: case rv_op_c_fsdsp: case rv_op_c_sqsp: 
+            case rv_op_amoswap_w: case rv_op_amoadd_w: case rv_op_amoxor_w: case rv_op_amoor_w: case rv_op_amoand_w: case rv_op_amomin_w: case rv_op_amomax_w: case rv_op_amominu_w: case rv_op_amomaxu_w:
+            case rv_op_amoswap_d: case rv_op_amoadd_d: case rv_op_amoxor_d: case rv_op_amoor_d: case rv_op_amoand_d:case rv_op_amomin_d: case rv_op_amomax_d: case rv_op_amominu_d: case rv_op_amomaxu_d:
+            case rv_op_amoswap_q: case rv_op_amoadd_q: case rv_op_amoxor_q: case rv_op_amoor_q: case rv_op_amoand_q:case rv_op_amomin_q: case rv_op_amomax_q: case rv_op_amominu_q: case rv_op_amomaxu_q:
+              t = &magic_w_address; break;
+            case rv_op_jalr: case rv_op_c_jalr:
+              t = &magic_x_address;
+            default:
+              t = &magic_void;
           }
+
           arg->value = rd_with_type(t);
         }
         break;
@@ -691,7 +707,7 @@ void masker_inst_t::mutation(bool debug) {
         arg->value = randBits(20) << 12;
         break;
       case rv_field_imm_j:
-        arg->value = simulator->get_random_executable_address(random) - pc;
+        arg->value = simulator->get_random_text_address(random) - pc;
         break;
       case rv_field_imm_i:
         if (op == rv_op_jalr) {
@@ -707,7 +723,7 @@ void masker_inst_t::mutation(bool debug) {
       // imm_b is used for branch instruction
       // so should be given a valid exec addr
       case rv_field_imm_b:
-        arg->value = simulator->get_random_executable_address(random) - pc;
+        arg->value = simulator->get_random_text_address(random) - pc;
         break;
 
       case rv_field_cls_uimm6:
@@ -874,7 +890,7 @@ void masker_inst_t::record_to_history() {
       else
         type[rd] = &magic_void;
     } else if (op == rv_op_jal || op == rv_op_jalr) {  // jump
-      type[rd] = &magic_fuzz_address;
+      type[rd] = &magic_text_address;
     } else {
       type[rd] = &magic_void;
     }
@@ -939,6 +955,10 @@ magic_type magic_void("void");
 magic_type magic_int("int", {&magic_void});
 magic_type magic_float("float", {&magic_void});
 magic_type magic_zero("zero", {&magic_int, &magic_float});
-magic_type magic_address("address", {&magic_void});
-magic_type magic_fuzz_address("fuzz_address", {&magic_address});
+magic_type magic_r_address("address", {&magic_void});
+magic_type magic_w_address("address", {&magic_void});
+magic_type magic_x_address("address", {&magic_void});
+magic_type magic_text_address("text address", {&magic_r_address, &magic_x_address});
+magic_type magic_data_address("data address", {&magic_r_address, &magic_w_address});
+
 
