@@ -538,17 +538,18 @@ uint64_t cosim_cj_t::get_random_data_address(std::default_random_engine &random)
   return select;
 }
 
-uint64_t cosim_cj_t::get_exception_return_address(std::default_random_engine &random) {
+uint64_t cosim_cj_t::get_exception_return_address(std::default_random_engine &random, int smode) {
   processor_t* p = get_core(0);
-  auto mepc = p->get_csr(CSR_MEPC);
-  if (in_fuzz_loop_range(mepc)) {  // step to the next inst
-    auto real_mepc = mepc;
-    if (va_enable) real_mepc = (mepc - 0x1000) + fuzz_loop_entry_addr;
-    int step = p->mmu->test_insn_length(real_mepc);
-    if (cj_debug) printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
-    return mepc + step;
+  state_t* s = p->get_state();
+  reg_t epc = smode ? s->sepc->read() : s->mepc->read();
+
+  if (in_fuzz_loop_range(epc)) {  // step to the next inst
+    reg_t epc_pa = va_enable ? (epc - 0x1000) + fuzz_loop_entry_addr : epc;
+    int step = p->mmu->test_insn_length(epc_pa);
+    if (cj_debug) printf("[CJ] %cepc %016lx in fuzz range, stepping %d bytes\n", smode ? 's' : 'm', epc, step);
+    return epc + step;
   } else { // load a randomly selected target
-    if (cj_debug) printf("[CJ] mepc %016lx out of fuzz range\n", mepc);
+    if (cj_debug) printf("[CJ] %cepc %016lx out of fuzz range\n", smode ? 's' : 'm', epc);
     return magic->load(MAGIC_RDM_TEXT_ADDR);
   }
 }
@@ -597,31 +598,17 @@ reg_t magic_t::rdm_address(int r, int w, int x) {  // 1 for yes, 0 for no, -1 fo
     return simulator->get_random_data_address(random);
 }
 
-reg_t magic_t::rdm_exp_ret() {
-  return simulator->get_exception_return_address(random);
+reg_t magic_t::rdm_epc_next(int smode) {
+  return simulator->get_exception_return_address(random, smode);
 }
 
-  const std::vector<magic_type*> magic_generator_type({
-  &magic_int,
-  &magic_int,
-  &magic_float,
-  &magic_float,
-  &magic_text_address,
-  &magic_data_address,
-  &magic_text_address
+const std::vector<magic_type*> magic_generator_type({
+  &magic_int,           /* MAGIC_RANDOM         */
+  &magic_int,           /* MAGIC_RDM_WORD       */
+  &magic_float,         /* MAGIC_RDM_FLOAT      */
+  &magic_float,         /* MAGIC_RDM_DOUBLE     */
+  &magic_text_address,  /* MAGIC_RDM_TEXT_ADDR  */
+  &magic_data_address,  /* MAGIC_RDM_DATA_ADDR  */
+  &magic_text_address,  /* MAGIC_MEPC_NEXT      */
+  &magic_text_address   /* MAGIC_SEPC_NEXT      */
 });
-
-//__attribute__((weak)) int main() {
-//  printf("Hello v0.3\n");
-//  config_t cfg;
-//  cfg.elffile = "/eda/project/riscv-tests/build/isa/rv64mi-p-illegal";
-//  cosim_cj_t cj(cfg);
-//
-//  while (true) {
-//    cj.cosim_commit_stage(0, 0, 0, false);
-//  }
-//
-//  printf("Exit ...\n");
-//
-//  return 0;
-//}

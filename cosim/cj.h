@@ -119,7 +119,7 @@ public:
   uint64_t cosim_randomizer_data(unsigned int read_select);
   uint64_t get_random_text_address(std::default_random_engine &random);
   uint64_t get_random_data_address(std::default_random_engine &random);
-  uint64_t get_exception_return_address(std::default_random_engine &random);
+  uint64_t get_exception_return_address(std::default_random_engine &random, int smode);
 
   // simif_t virtual function
   char* addr_to_mem(reg_t addr);
@@ -232,9 +232,9 @@ class magic_t {
     generator[MAGIC_RDM_DOUBLE/8]     = std::bind(&magic_t::rdm_float, this, -1, -1, 52, 63);
     generator[MAGIC_RDM_TEXT_ADDR/8]  = std::bind(&magic_t::rdm_address, this, 1, 1, 1);
     generator[MAGIC_RDM_DATA_ADDR/8]  = std::bind(&magic_t::rdm_address, this, 1, 1, 0);
-    generator[MAGIC_EPC_NEXT/8]       = std::bind(&magic_t::rdm_exp_ret, this);
-    generator[MAGIC_EPC_MAP/8]        = std::bind(&magic_t::rdm_dummy, this);
-    generator[MAGIC_RDM_PTE/8]        = std::bind(&magic_t::rdm_dummy, this);
+    generator[MAGIC_MEPC_NEXT/8]      = std::bind(&magic_t::rdm_epc_next, this, 0);
+    generator[MAGIC_SEPC_NEXT/8]      = std::bind(&magic_t::rdm_epc_next, this, 1);
+    generator[MAGIC_RDM_PTE/8]        = std::bind(&magic_t::rdm_dword, this, 10, 0);
   }
   
   reg_t load(reg_t addr) {
@@ -250,7 +250,7 @@ class magic_t {
   reg_t rdm_dword(int width, int sgned);                    // 1 for signed, 0 for unsigned, -1 for random
   reg_t rdm_float(int type, int sgn, int botE, int botS);   // 0 for 0, 1 for INF, 2 for qNAN, 3 for sNAN, 4 for normal, 5 for tiny, -1 for random
   reg_t rdm_address(int r, int w, int x);                   // 1 for yes, 0 for no, -1 for random
-  reg_t rdm_exp_ret();
+  reg_t rdm_epc_next(int smode);                            // 1 for sepc, 0 for mepc
   reg_t rdm_dummy() { return 0; }
 
  private:
