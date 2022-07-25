@@ -172,12 +172,12 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
           fuzz_loop_page_num, fuzz_loop_entry_addr, fuzz_loop_exit_addr);  
   procs[0]->get_state()->pc = cfg.mem_base();
 
-  for (auto it = text_label.begin(); it != text_label.end(); it++) {
-      std::cout << std::hex << (*it) << ' ';
-  } std::cout << '\n';
-  for (auto it = data_label.begin(); it != data_label.end(); it++) {
-      std::cout << std::hex << (*it) << ' ';
-  } std::cout << '\n';
+  // for (auto it = text_label.begin(); it != text_label.end(); it++) {
+  //     std::cout << std::hex << (*it) << ' ';
+  // } std::cout << '\n';
+  // for (auto it = data_label.begin(); it != data_label.end(); it++) {
+  //     std::cout << std::hex << (*it) << ' ';
+  // } std::cout << '\n';
 }
 
 cosim_cj_t::~cosim_cj_t() {
@@ -521,9 +521,9 @@ uint64_t cosim_cj_t::get_random_text_address(std::default_random_engine &random)
   auto select = text_label[rand_label(random)];
   if (cj_debug) printf("[CJ] generated random text label: %s(%016lx)\n", addr2symbol[select].c_str(), select);
 
-  processor_t* p = get_core(0);
-  state_t* s = p->get_state();
-  printf("pc 0x%lx  mepc 0x%lx  sepc 0x%lx\n", s->pc, s->mepc->read(), s->sepc->read());
+  // processor_t* p = get_core(0);
+  // state_t* s = p->get_state();
+  // printf("pc 0x%lx  mepc 0x%lx  sepc 0x%lx\n", s->pc, s->mepc->read(), s->sepc->read());
 
   return select;
 }
@@ -542,7 +542,9 @@ uint64_t cosim_cj_t::get_exception_return_address(std::default_random_engine &ra
   processor_t* p = get_core(0);
   auto mepc = p->get_csr(CSR_MEPC);
   if (in_fuzz_loop_range(mepc)) {  // step to the next inst
-    int step = p->mmu->test_insn_length(mepc);
+    auto real_mepc = mepc;
+    if (va_enable) real_mepc = (mepc - 0x1000) + fuzz_loop_entry_addr;
+    int step = p->mmu->test_insn_length(real_mepc);
     if (cj_debug) printf("[CJ] mepc %016lx in fuzz range, stepping %d bytes\n", mepc, step);
     return mepc + step;
   } else { // load a randomly selected target

@@ -129,10 +129,20 @@ public:
   const char* get_symbol(uint64_t addr);
 
   bool in_fuzz_loop_range(uint64_t addr) {
-    return fuzz_loop_entry_addr <= addr && addr < fuzz_loop_exit_addr;
+    if (va_enable) {
+      return 0x1000 <= addr && addr < (fuzz_loop_exit_addr - fuzz_loop_entry_addr + 0x1000);
+    } else {
+      return fuzz_loop_entry_addr <= addr && addr < fuzz_loop_exit_addr;
+    }
   }
+
   bool in_fuzz_handler_range(uint64_t addr) {
-    return fuzz_handler_start_addr <= addr && addr < fuzz_handler_end_addr;
+    if (va_enable) {
+      return (fuzz_handler_start_addr <= addr && addr < fuzz_handler_end_addr) || 
+             ((fuzz_handler_start_addr | va_mask) <= addr && addr < (fuzz_handler_end_addr | va_mask)) ;
+    } else {
+      return fuzz_handler_start_addr <= addr && addr < fuzz_handler_end_addr;
+    }
   }
 
   // chunked_memif_t virtual function
@@ -230,7 +240,7 @@ class magic_t {
   reg_t load(reg_t addr) {
     reg_t id = addr / 8;
     reg_t tmp = id < generator.size() ? generator[id]() : 0;
-    printf("[CJ] Magic read: %016lx -> %016lx\n", addr, tmp);
+    // printf("[CJ] Magic read: %016lx -> %016lx\n", addr, tmp);
     return tmp;
   }
   
