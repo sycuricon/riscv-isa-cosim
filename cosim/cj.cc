@@ -545,7 +545,7 @@ uint64_t cosim_cj_t::get_exception_return_address(std::default_random_engine &ra
 
   if (in_fuzz_loop_range(epc)) {  // step to the next inst
     reg_t epc_pa = va_enable ? (epc - 0x1000) + fuzz_loop_entry_addr : epc;
-    int step = p->mmu->test_insn_length(epc_pa);
+    int step = debug_mmu->test_insn_length(epc_pa);
     if (cj_debug) printf("[CJ] %cepc %016lx in fuzz range, stepping %d bytes\n", smode ? 's' : 'm', epc, step);
     return epc + step;
   } else { // load a randomly selected target
