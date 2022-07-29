@@ -108,7 +108,6 @@ public:
   void record_to_history();
   static void reset_mutation_history();
   static void fence_mutation();
-  static void mark_fence_mutation();
 
 private:
   static std::default_random_engine random;
@@ -129,7 +128,7 @@ inline bool hint_insn(uint64_t insn) {
   if ((insn & 0xfffff) == 0x02013) 
     return true;
   /* magic device: l? x?, imm(x0) */
-  else if ((insn & 0xf8003) == 0x00003)
+  else if ((insn & 0xf807f) == 0x00003)
     return true;
   else
     return false;

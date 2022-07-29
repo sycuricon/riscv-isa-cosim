@@ -4,6 +4,13 @@
 
 #include <queue>
 
+std::default_random_engine masker_inst_t::random;
+std::uniform_int_distribution<uint64_t> masker_inst_t::rand2(0, 1);
+std::unordered_map<uint64_t, uint64_t> masker_inst_t::history;
+circular_queue<int, 16> masker_inst_t::rd_in_pipeline;
+magic_type *masker_inst_t::type[32];
+
+
 void decode_inst_opcode(masker_inst_t* dec) {
   rv_xlen xlen = dec->xlen;
   rv_inst inst = dec->inst;
@@ -866,20 +873,18 @@ int masker_inst_t::rd_with_type(magic_type *t) {
 void masker_inst_t::record_to_history() {
   history[pc] = inst;
   
-  int rd = 0;           bool has_rd = false;
-  int rs1 = 0;          bool has_rs1 = false;
-  int64_t imm = 0;      bool has_imm = false;
-  for (auto &arg : args)
+  int rd = 0, rs1 = 0;
+  int64_t imm = 0;
+  for (auto &arg : args) {
     if (arg->name == rv_field_rd) {
       rd = arg->value;
-      has_rd = true;
     } else if (arg->name == rv_field_rs1) {
       rs1 = arg->value;
-      has_rs1 = true;
     } else if (arg->name == rv_field_imm_i) {
       imm = arg->value;
-      has_imm = true;
     }
+  }
+
 
   // save type
   if (rd != 0) {
@@ -918,18 +923,6 @@ void masker_inst_t::reset_mutation_history() {
 void masker_inst_t::fence_mutation() {
   history.clear();
 }
-
-void masker_inst_t::mark_fence_mutation() {
-}
-
-std::default_random_engine masker_inst_t::random;
-std::uniform_int_distribution<uint64_t> masker_inst_t::rand2(0, 1);
-std::unordered_map<uint64_t, uint64_t> masker_inst_t::history;
-circular_queue<int, 16> masker_inst_t::rd_in_pipeline;
-magic_type *masker_inst_t::type[32];
-
-
-
 
 magic_type::magic_type(const std::string &name, std::vector<magic_type*> parents) :
   name(name),

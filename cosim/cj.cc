@@ -16,6 +16,16 @@ const char *reg_name[32] = {
     "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
 };
 
+const char *freg_name[32] = {
+    "ft0", "ft1", "ft2",  "ft3",  "ft4", "ft5", "ft6", "ft7",
+    "fs0", "fs1", "fa0",  "fa1",  "fa2", "fa3", "fa4", "fa5",
+    "fa6", "fa7", "fs2",  "fs3",  "fs4", "fs5", "fs6", "fs7",
+    "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"
+};
+
+inline long unsigned int dump(const freg_t& f) { return f.v[0]; }
+inline long unsigned int dump(const reg_t& x) { return x; }
+
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
   matched_reg_count_stat(33, 0), blind(false),
   mmio_access(false), tohost_addr(0), tohost_data(0),
@@ -261,6 +271,16 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   clear_mmio_access();
 
   do {
+    // for (int i = 0; i < 8; i++) {
+    //   printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+    //     freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
+    //     freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
+    // }
+    // for (int i = 0; i < 8; i++) {
+    //   printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+    //     reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
+    //     reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
+    // }
     p->step(1, p->pending_intrpt);
     mmu->set_insn_rdm(false);
   } while (get_core(0)->fix_pc);
@@ -277,10 +297,8 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   } else if (dut_insn == 0x00102013UL) {
     // printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
     masker_inst_t::fence_mutation();
-  } else if ((dut_insn & 0x0000707f) == 0x0000100fUL) {
-    // printf("\e[1;33m[CJ] FENCE.I, reset mutation queue\e[0m\n");
-    masker_inst_t::fence_mutation();
-  }
+  } 
+
 
   // update tohost
   auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
@@ -321,9 +339,16 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   if (dut_pc != sim_pc || dut_insn != sim_insn) {
     printf("\x1b[31m[error] PC SIM \x1b[33m%016lx\x1b[31m, DUT \x1b[36m%016lx\x1b[0m\n", sim_pc, dut_pc);
     printf("\x1b[31m[error] INSN SIM \x1b[33m%08x\x1b[31m, DUT \x1b[36m%08x\x1b[0m\n", sim_insn, dut_insn);
-    // for (int i = 0; i < 32; i++) {
-    //   printf("%s = 0x%016lx\n", reg_name[i], s->XPR[i]);
-    // }
+    for (int i = 0; i < 8; i++) {
+      printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+        freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
+        freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
+    }
+    for (int i = 0; i < 8; i++) {
+      printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+        reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
+        reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
+    }
     if (blind) {
       tohost_data = 1;
       return 0;
@@ -335,8 +360,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   return 0;
 }
 
-inline long unsigned int dump(const freg_t& f) { return f.v[0]; }
-inline long unsigned int dump(const reg_t& x) { return x; }
+
 int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bool fc) {
   processor_t* p = get_core(hartid);
   state_t* s = p->get_state();
@@ -350,7 +374,17 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
       } else {
         printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
           dump(f_check_board.get_data(dut_waddr)), dump(freg(f64(dut_wdata))));
-        printf("\x1b[31m[error] float check board check %d error \x1b[0m\n", dut_waddr);
+        printf("\x1b[31m[error] %016lx@%08x float check board check %d error \x1b[0m\n", f_check_board.get_pc(dut_waddr), f_check_board.get_insn(dut_waddr), dut_waddr);
+        for (int i = 0; i < 8; i++) {
+          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+            freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
+            freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
+        }
+        for (int i = 0; i < 8; i++) {
+          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+            reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
+            reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
+        } 
         if (blind) {
           s->FPR.write(dut_waddr, freg(f64(dut_wdata)));
           f_check_board.clear(dut_waddr);
@@ -376,7 +410,17 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
       } else {
         printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
           dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
-        printf("\x1b[31m[error] check board clear %d error \x1b[0m\n", dut_waddr);
+        printf("\x1b[31m[error] %016lx@%08x check board clear %d error \x1b[0m\n", check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dut_waddr);
+        for (int i = 0; i < 8; i++) {
+          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+            freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
+            freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
+        }
+        for (int i = 0; i < 8; i++) {
+          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
+            reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
+            reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
+        } 
         if (blind) {
           s->XPR.write(dut_waddr, dut_wdata);
           check_board.clear(dut_waddr);
@@ -413,14 +457,6 @@ uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
     new_inst = insn.encode(cj_debug);
   } else {
     new_inst = in;
-  }
-
-  if (new_inst == 0x00102013UL) {
-    if (cj_debug) printf("\e[1;33m[CJ] Mark mutation queue\e[0m\n");
-    masker_inst_t::mark_fence_mutation();
-  } else if ((new_inst & 0x0000707f) == 0x0000100fUL) {
-    if (cj_debug) printf("\e[1;33m[CJ] FENCE.I, mark mutation queue\e[0m\n");
-    masker_inst_t::mark_fence_mutation();
   }
 
   insn.record_to_history();
