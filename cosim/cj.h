@@ -212,8 +212,8 @@ private:
 class dummy_device_t : public abstract_device_t {
  public:
   dummy_device_t(size_t addr, size_t size) : mmio_addr(addr), mmio_size(size) {}
-  bool load(reg_t addr, size_t len, uint8_t* bytes) { return (addr + len) < mmio_size; }
-  bool store(reg_t addr, size_t len, const uint8_t* bytes) { return (addr + len) < mmio_size; }
+  bool load(reg_t addr, size_t len, uint8_t* bytes) { return (addr + len) <= mmio_size; }
+  bool store(reg_t addr, size_t len, const uint8_t* bytes) { return (addr + len) <= mmio_size; }
   size_t size() { return mmio_size; }
   size_t addr() { return mmio_addr; }
 private:
