@@ -182,12 +182,12 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
           fuzz_loop_page_num, fuzz_loop_entry_addr, fuzz_loop_exit_addr);  
   procs[0]->get_state()->pc = cfg.mem_base();
 
-  // for (auto it = text_label.begin(); it != text_label.end(); it++) {
-  //     std::cout << std::hex << (*it) << ' ';
-  // } std::cout << '\n';
-  // for (auto it = data_label.begin(); it != data_label.end(); it++) {
-  //     std::cout << std::hex << (*it) << ' ';
-  // } std::cout << '\n';
+  for (auto it = text_label.begin(); it != text_label.end(); it++) {
+      std::cout << std::hex << (*it) << ' ';
+  } std::cout << '\n';
+  for (auto it = data_label.begin(); it != data_label.end(); it++) {
+      std::cout << std::hex << (*it) << ' ';
+  } std::cout << '\n';
 }
 
 cosim_cj_t::~cosim_cj_t() {
@@ -301,10 +301,12 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
 
 
   // update tohost
-  auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
-  memcpy(&tohost_data, &data, sizeof(data));
-  update_tohost_info();
-  debug_mmu->store_uint64(tohost_addr, 0);
+  if (in_fuzz_handler_range(s->pc)) {
+    auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
+    memcpy(&tohost_data, &data, sizeof(data));  
+  }
+  debug_mmu->store_uint64(tohost_addr, 0);  
+
 
   if (!check)
     return 0;

@@ -137,6 +137,10 @@ public:
   }
 
   bool in_fuzz_handler_range(uint64_t addr) {
+    if (fuzz_handler_start_addr == 0 && fuzz_handler_end_addr == 0) {
+      return true;
+    }
+
     if (va_enable) {
       return (fuzz_handler_start_addr <= addr && addr < fuzz_handler_end_addr) || 
              ((fuzz_handler_start_addr | va_mask) <= addr && addr < (fuzz_handler_end_addr | va_mask)) ;
