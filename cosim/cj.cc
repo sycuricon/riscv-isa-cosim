@@ -288,20 +288,19 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   // printf("[CJ] current prev: %d mstatus : %lx\n", s->prv, s->mstatus->read());
   // printf("[CJ] tvec %lx %lx\n", s->mtvec->read(), s->stvec->read());
   
-  if (!start_randomize && dut_insn == 0x00002013UL) {
-    if (cj_debug) printf("[CJ] Enable insn randomization\n");
-    start_randomize = true;
-  } else if (start_randomize && dut_insn == 0xfff02013UL) {
-    if (cj_debug) printf("[CJ] Disable insn randomization\n");
-    start_randomize = false;
-  } else if (dut_insn == 0x00102013UL) {
-    if (cj_debug) printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
-    masker_inst_t::fence_mutation();
-  } 
-
-
   // update tohost
   if (in_fuzz_handler_range(s->pc)) {
+    if (!start_randomize && dut_insn == 0x00002013UL) {
+      if (cj_debug) printf("[CJ] Enable insn randomization\n");
+      start_randomize = true;
+    } else if (start_randomize && dut_insn == 0xfff02013UL) {
+      if (cj_debug) printf("[CJ] Disable insn randomization\n");
+      start_randomize = false;
+    } else if (dut_insn == 0x00102013UL) {
+      if (cj_debug) printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
+      masker_inst_t::fence_mutation();
+    } 
+
     auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
     memcpy(&tohost_data, &data, sizeof(data));  
   }
