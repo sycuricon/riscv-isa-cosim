@@ -83,6 +83,30 @@ private:
   T arr[capacity];
 };
 
+struct rdm_entry {
+  uint64_t pc;
+  uint64_t insn;
+
+  rdm_entry() : pc(0xdeadbeef), insn(0xdeadbeef) { }
+  rdm_entry(uint64_t pc, uint64_t insn) {
+    this->pc = pc;
+    if ((insn & 0x3) == 0x3) this->insn = insn & 0xffffffff;
+    else this->insn = insn & 0xffff;
+  }
+
+  bool operator==(const rdm_entry& other) const {
+    if (this->pc == other.pc && this->insn == other.insn) return true;
+    else return false;
+  }
+
+  struct HashFunction {
+    size_t operator()(const rdm_entry& entry) const {
+      static_assert(sizeof(size_t) >= 8, "size of size_t is less than 8");
+      return ((entry.pc & 0xffffffff) << 32) | (entry.insn & 0xffffffff);
+    }
+  };
+};
+
 class masker_inst_t {
 public:
   uint64_t  pc;
@@ -92,7 +116,9 @@ public:
   std::vector<field_t*> args;
 
   masker_inst_t(rv_inst inst, rv_xlen xlen, uint64_t pc) :
-    pc(pc), xlen(xlen), inst(inst) { }
+    pc(pc), xlen(xlen), inst(inst) {
+      // printf(">>> %016lx  %016lx\n", pc, inst);
+    }
 
   void decode() {
     for (auto arg : args)
@@ -102,10 +128,10 @@ public:
   rv_inst bare_op();
 
   rv_inst encode(bool debug=false);
-  void mutation(bool debug=false);
+  rv_inst mutation(bool debug=false);
   rv_inst replay_mutation(bool debug=false);
 
-  void record_to_history();
+  void record_to_history(rv_inst new_inst);
   static void reset_mutation_history();
   static void fence_mutation();
 
@@ -118,20 +144,20 @@ private:
   static int random_rd_in_pipeline();
   static int rd_with_type(magic_type *t);
 
-  static std::unordered_map<uint64_t, uint64_t> history;
+  static std::unordered_map<rdm_entry, uint64_t, rdm_entry::HashFunction> history;
   static circular_queue<int, 16> rd_in_pipeline;
   static magic_type *type[32];
 };
 
-inline bool hint_insn(uint64_t insn) {
+inline rv_hint hint_insn(uint64_t insn) {
   /* hint insn: slti x0, x0, imm */
   if ((insn & 0xfffff) == 0x02013) 
-    return true;
+    return rdm_ops;
   /* magic device: l? x?, imm(x0) */
   else if ((insn & 0xf807f) == 0x00003)
-    return true;
+    return magic_ops;
   else
-    return false;
+    return not_hint;
 }
 
 

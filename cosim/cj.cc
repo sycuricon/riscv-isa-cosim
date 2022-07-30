@@ -289,13 +289,13 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   // printf("[CJ] tvec %lx %lx\n", s->mtvec->read(), s->stvec->read());
   
   if (!start_randomize && dut_insn == 0x00002013UL) {
-    // printf("[CJ] Enable insn randomization\n");
+    if (cj_debug) printf("[CJ] Enable insn randomization\n");
     start_randomize = true;
   } else if (start_randomize && dut_insn == 0xfff02013UL) {
-    // printf("[CJ] Disable insn randomization\n");
+    if (cj_debug) printf("[CJ] Disable insn randomization\n");
     start_randomize = false;
   } else if (dut_insn == 0x00102013UL) {
-    // printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
+    if (cj_debug) printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
     masker_inst_t::fence_mutation();
   } 
 
@@ -448,20 +448,18 @@ void cosim_cj_t::cosim_raise_trap(int hartid, reg_t cause) {
 uint64_t cosim_cj_t::cosim_randomizer_insn(uint64_t in, uint64_t pc) {
   masker_inst_t insn(in, rv64, pc);
   decode_inst_opcode(&insn);
-  decode_inst_oprand(&insn);
   
   uint64_t new_inst;
   // Mutate
-  if (hint_insn(in)) {
+  if (hint_insn(in) != not_hint) {
     new_inst = in;
   } else if (start_randomize && !in_fuzz_handler_range(pc)) {
-    insn.mutation(cj_debug);
-    new_inst = insn.encode(cj_debug);
+    new_inst = insn.mutation(cj_debug);
   } else {
     new_inst = in;
   }
 
-  insn.record_to_history();
+  insn.record_to_history(new_inst);
   return new_inst;
 }
 

@@ -173,4 +173,9 @@ typedef enum {
   rv_field_css_uimm9
 } rv_field;
 
+
+typedef enum {
+  not_hint, magic_ops, rdm_ops
+} rv_hint;
+
 #endif

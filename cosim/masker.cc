@@ -6,7 +6,7 @@
 
 std::default_random_engine masker_inst_t::random;
 std::uniform_int_distribution<uint64_t> masker_inst_t::rand2(0, 1);
-std::unordered_map<uint64_t, uint64_t> masker_inst_t::history;
+std::unordered_map<rdm_entry, uint64_t, rdm_entry::HashFunction> masker_inst_t::history;
 circular_queue<int, 16> masker_inst_t::rd_in_pipeline;
 magic_type *masker_inst_t::type[32];
 
@@ -564,9 +564,11 @@ rv_inst masker_inst_t::bare_op() {
   return op;
 }
 
-void masker_inst_t::mutation(bool debug) {
-  if (history.find(pc) != history.end())  // already mutated
-    return;
+rv_inst masker_inst_t::mutation(bool debug) {
+  if (history.find(rdm_entry(pc, inst)) != history.end())  // already mutated
+    return replay_mutation(debug);
+  
+  decode_inst_oprand(this);
 
   static std::vector<rv_inst> amo_list = {0x2, 0x3, 0x1, 0x0, 0x4, 0xc, 0x8, 0x10, 0x14, 0x18, 0x1c};
   rv_inst bop = bare_op();
@@ -801,12 +803,14 @@ void masker_inst_t::mutation(bool debug) {
       printf(" %08lx\e[0m\n", arg->value);
     }
   }
+
+  return encode(debug);
 }
 
 rv_inst masker_inst_t::encode(bool debug) {
     rv_inst new_inst;
-    if (history.find(pc) != history.end())
-      return inst = replay_mutation(debug);
+    // if (history.find(rdm_entry(pc, inst)) != history.end())
+    //   return replay_mutation(debug);
 
     if ((inst & OP_MASK) == OP_32)
       new_inst = inst & 0x7f;
@@ -822,12 +826,20 @@ rv_inst masker_inst_t::encode(bool debug) {
       printf("\e[1;35m[CJ] Insn mutation:  %016lx @ %08lx -> %08lx [%s] \e[0m\n", pc, inst, new_inst, rv_opcode_name[tmp.op]);
     }
 
-    inst = new_inst;
+    // inst = new_inst;
     return new_inst;
   }
 
 rv_inst masker_inst_t::replay_mutation(bool debug) {
-  auto new_inst = history[pc];
+  rv_inst new_inst;
+  if (history.find(rdm_entry(pc, inst)) != history.end()) {
+    new_inst = history[rdm_entry(pc, inst)];
+  } else {
+    // do not directly use the return 0 for the non-exsist key
+    if (debug) printf("\e[1;33m[CJ] Non-exsist key, maybe zero maybe something wrong \e[0m\n");
+    new_inst = 0x0;
+  }
+
   if (debug) {
     masker_inst_t tmp(new_inst, rv64, pc);
     decode_inst_opcode(&tmp);
@@ -870,26 +882,17 @@ int masker_inst_t::rd_with_type(magic_type *t) {
   }
 }
 
-void masker_inst_t::record_to_history() {
-  history[pc] = inst;
+void masker_inst_t::record_to_history(rv_inst new_inst) {
+  history[rdm_entry(pc, inst)] = new_inst;
   
-  int rd = 0, rs1 = 0;
-  int64_t imm = 0;
-  for (auto &arg : args) {
-    if (arg->name == rv_field_rd) {
-      rd = arg->value;
-    } else if (arg->name == rv_field_rs1) {
-      rs1 = arg->value;
-    } else if (arg->name == rv_field_imm_i) {
-      imm = arg->value;
-    }
-  }
-
+  int rd = (new_inst << 52) >> 59;
+  int rs1 = (new_inst << 44) >> 59;
+  int64_t imm = ((int64_t)new_inst << 32) >> 52;
 
   // save type
   if (rd != 0) {
-    if (op == rv_op_ld && rs1 == 0 && 0 <= imm) {  // ld
-      size_t index = imm / 8;
+    if (hint_insn(new_inst) == magic_ops && 0 <= imm) {
+     size_t index = imm / 8;
       if (index < magic_generator_type.size())
         type[rd] = magic_generator_type[index];
       else

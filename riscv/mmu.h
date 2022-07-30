@@ -345,8 +345,7 @@ public:
       insn |= (insn_bits_t)from_le(*(const uint16_t*)translate_insn_addr_to_host(addr + 2)) << 16;
     }
 
-    if (enable_insn_rdm && !hint_insn(insn)) {
-      // enable_insn_rdm = false;
+    if (enable_insn_rdm && (hint_insn(insn) == not_hint)) {
       masker_inst_t rdm_insn(insn, rv64, addr);
       insn = rdm_insn.replay_mutation(proc->cosim_verbose);
       int high = 64 - length * 8;
