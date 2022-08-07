@@ -26,6 +26,18 @@ const char *freg_name[32] = {
 inline long unsigned int dump(const freg_t& f) { return f.v[0]; }
 inline long unsigned int dump(const reg_t& x) { return x; }
 
+#define DUMP_STATE                                                                        \
+    for (int i = 0; i < 8; i++) {                                                         \
+      printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n",                 \
+        freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),     \
+        freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));    \
+    }                                                                                     \
+    for (int i = 0; i < 8; i++) {                                                         \
+      printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n",                 \
+        reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),       \
+        reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));      \
+    };
+
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
   matched_reg_count_stat(33, 0), blind(false),
   mmio_access(false), tohost_addr(0), tohost_data(0),
@@ -37,7 +49,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
 
   cj_debug = cfg.verbose();
   va_mask = cfg.va_mask();
-  // blind = true;
+  blind = true;
   // cj_debug = false;
 
   // create memory and debug mmu
@@ -270,20 +282,13 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
 
   clear_mmio_access();
 
+  int step_count = 0;
   do {
-    // for (int i = 0; i < 8; i++) {
-    //   printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-    //     freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
-    //     freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
-    // }
-    // for (int i = 0; i < 8; i++) {
-    //   printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-    //     reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
-    //     reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
-    // }
+    // DUMP_STATE;
     p->step(1, p->pending_intrpt);
     mmu->set_insn_rdm(false);
-  } while (get_core(0)->fix_pc);
+    step_count ++;
+  } while (get_core(0)->fix_pc && step_count <= 5);
 
   // printf("[CJ] current prev: %d mstatus : %lx\n", s->prv, s->mstatus->read());
   // printf("[CJ] tvec %lx %lx\n", s->mtvec->read(), s->stvec->read());
@@ -340,16 +345,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   if (dut_pc != sim_pc || dut_insn != sim_insn) {
     printf("\x1b[31m[error] PC SIM \x1b[33m%016lx\x1b[31m, DUT \x1b[36m%016lx\x1b[0m\n", sim_pc, dut_pc);
     printf("\x1b[31m[error] INSN SIM \x1b[33m%08x\x1b[31m, DUT \x1b[36m%08x\x1b[0m\n", sim_insn, dut_insn);
-    for (int i = 0; i < 8; i++) {
-      printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-        freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
-        freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
-    }
-    for (int i = 0; i < 8; i++) {
-      printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-        reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
-        reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
-    }
+    DUMP_STATE;
     if (blind) {
       tohost_data = 1;
       return 0;
@@ -376,16 +372,7 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
           dump(f_check_board.get_data(dut_waddr)), dump(freg(f64(dut_wdata))));
         printf("\x1b[31m[error] %016lx@%08x float check board check %d error \x1b[0m\n", f_check_board.get_pc(dut_waddr), f_check_board.get_insn(dut_waddr), dut_waddr);
-        for (int i = 0; i < 8; i++) {
-          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-            freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
-            freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
-        }
-        for (int i = 0; i < 8; i++) {
-          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-            reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
-            reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
-        } 
+        DUMP_STATE;
         if (blind) {
           s->FPR.write(dut_waddr, freg(f64(dut_wdata)));
           f_check_board.clear(dut_waddr);
@@ -412,16 +399,7 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         printf("\x1b[31m[error] WDATA \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
           dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
         printf("\x1b[31m[error] %016lx@%08x check board clear %d error \x1b[0m\n", check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dut_waddr);
-        for (int i = 0; i < 8; i++) {
-          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-            freg_name[4*i+0], dump(s->FPR[4*i+0]), freg_name[4*i+1], dump(s->FPR[4*i+1]),
-            freg_name[4*i+2], dump(s->FPR[4*i+2]), freg_name[4*i+3], dump(s->FPR[4*i+3]));
-        }
-        for (int i = 0; i < 8; i++) {
-          printf("%s = 0x%016lx %s = 0x%016lx %s = 0x%016lx %s = 0x%016lx\n", 
-            reg_name[4*i+0], dump(s->XPR[4*i+0]), reg_name[4*i+1], dump(s->XPR[4*i+1]),
-            reg_name[4*i+2], dump(s->XPR[4*i+2]), reg_name[4*i+3], dump(s->XPR[4*i+3]));
-        } 
+        DUMP_STATE;
         if (blind) {
           s->XPR.write(dut_waddr, dut_wdata);
           check_board.clear(dut_waddr);
