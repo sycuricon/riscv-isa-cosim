@@ -3,6 +3,7 @@
 #ifndef _RISCV_DISASM_H
 #define _RISCV_DISASM_H
 
+#include "common.h"
 #include "decode.h"
 #include "isa_parser.h"
 #include <string>

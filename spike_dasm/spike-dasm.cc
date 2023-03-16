@@ -6,6 +6,7 @@
 // enclosed hexadecimal number, interpreted as a RISC-V
 // instruction.
 
+#include "config.h"
 #include "disasm.h"
 #include "extension.h"
 #include <iostream>
@@ -14,7 +15,7 @@
 #include <fesvr/option_parser.h>
 using namespace std;
 
-int main(int argc, char** argv)
+int main(int UNUSED argc, char** argv)
 {
   string s;
   const char* isa = DEFAULT_ISA;
@@ -50,13 +51,9 @@ int main(int argc, char** argv)
         continue;
 
       char* endp;
-      int64_t bits = strtoull(&s[pos], &endp, 16);
+      insn_bits_t bits = strtoull(&s[pos], &endp, 16);
       if (*endp != ')')
         continue;
-
-      size_t nbits = 4 * (endp - &s[pos]);
-      if (nbits < 64)
-        bits = bits << (64 - nbits) >> (64 - nbits);
 
       string dis = disassembler->disassemble(bits);
       s = s.substr(0, start) + dis + s.substr(endp - &s[0] + 1);

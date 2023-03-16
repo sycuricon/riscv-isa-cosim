@@ -1,5 +1,6 @@
 // See LICENSE for license details.
 
+#include "config.h"
 #include "syscall.h"
 #include "htif.h"
 #include "byteorder.h"
@@ -16,6 +17,10 @@
 using namespace std::placeholders;
 
 #define RISCV_AT_FDCWD -100
+
+#ifdef __GNUC__
+# pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 
 struct riscv_stat
 {

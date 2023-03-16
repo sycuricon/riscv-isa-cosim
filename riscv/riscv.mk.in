@@ -3,37 +3,44 @@ get_opcode = $(shell grep ^DECLARE_INSN.*\\\<$(2)\\\> $(1) | sed 's/DECLARE_INSN
 
 riscv_subproject_deps = \
 	fdt \
+	disasm \
+	fesvr \
 	softfloat \
+
+riscv_CFLAGS = -fPIC
+
+riscv_install_shared_lib = yes
 
 riscv_install_prog_srcs = \
 
-riscv_hdrs = \
+riscv_install_hdrs = \
 	abstract_device.h \
+	abstract_interrupt_controller.h \
+	cachesim.h \
+	cfg.h \
 	common.h \
+	csrs.h \
+	debug_module.h \
+	debug_rom_defines.h \
 	decode.h \
 	devices.h \
-	dts.h \
+	disasm.h \
+	encoding.h \
+	entropy_source.h \
+	extension.h \
+	isa_parser.h \
+	log_file.h \
+	memtracer.h \
+	mmio_plugin.h \
 	mmu.h \
-	cfg.h \
+	platform.h \
 	processor.h \
+	rocc.h \
 	sim.h \
 	simif.h \
 	trap.h \
-	encoding.h \
-	cachesim.h \
-	memtracer.h \
-	mmio_plugin.h \
-	tracer.h \
-	extension.h \
-	rocc.h \
-	insn_template.h \
-	debug_module.h \
-	debug_rom_defines.h \
-	remote_bitbang.h \
-	jtag_dtm.h \
-	csrs.h \
-
-riscv_install_hdrs = mmio_plugin.h
+	triggers.h \
+	vector_unit.h \
 
 riscv_precompiled_hdrs = \
 	insn_template.h \
@@ -53,10 +60,16 @@ riscv_srcs = \
 	devices.cc \
 	rom.cc \
 	clint.cc \
+	plic.cc \
+	ns16550.cc \
 	debug_module.cc \
 	remote_bitbang.cc \
 	jtag_dtm.cc \
 	csrs.cc \
+	triggers.cc \
+	vector_unit.cc \
+	socketif.cc \
+	cfg.cc \
 	$(riscv_gen_srcs) \
 
 riscv_test_srcs =
@@ -1259,42 +1272,67 @@ riscv_insn_svinval = \
 	hinval_vvma \
 	hinval_gvma \
 
+riscv_insn_ext_zcb = \
+	c_zext_b \
+	c_zext_h \
+	c_zext_w \
+	c_sext_b \
+	c_sext_h \
+	c_not \
+	c_mul \
+	c_lbu \
+	c_lhu \
+	c_lh \
+	c_sb \
+	c_sh \
+
+riscv_insn_ext_zcmp = \
+	cm_push \
+	cm_pop \
+	cm_popret \
+	cm_popretz \
+	cm_mva01s \
+	cm_mvsa01 \
+
+riscv_insn_ext_zcmt = \
+	cm_jalt \
+
+riscv_insn_ext_zce = \
+	$(riscv_insn_ext_zcb) \
+	$(riscv_insn_ext_zcmp) \
+	$(riscv_insn_ext_zcmt) \
+
 riscv_insn_ext_cmo = \
 	cbo_clean \
 	cbo_flush \
 	cbo_inval \
 	cbo_zero \
 
+riscv_insn_ext_zicond = \
+        czero_eqz \
+        czero_nez \
+
 riscv_insn_list = \
-    $(riscv_insn_ext_i) \
-    $(riscv_insn_ext_m) \
-    $(riscv_insn_ext_a) \
-    $(riscv_insn_ext_f) \
-    $(riscv_insn_ext_d) \
-    $(riscv_insn_ext_c) \
+	$(riscv_insn_ext_a) \
+	$(riscv_insn_ext_c) \
+	$(riscv_insn_ext_i) \
+	$(riscv_insn_ext_m) \
+	$(riscv_insn_ext_f) \
+	$(riscv_insn_ext_d) \
+	$(riscv_insn_ext_zfh) \
+	$(riscv_insn_ext_q) \
+	$(riscv_insn_ext_b) \
+	$(riscv_insn_ext_k) \
+	$(if $(HAVE_INT128),$(riscv_insn_ext_v),) \
+	$(riscv_insn_ext_zce) \
+	$(riscv_insn_ext_h) \
+	$(riscv_insn_ext_p) \
 	$(riscv_insn_priv) \
-    $(riscv_insn_ext_k) \
-    $(riscv_insn_ext_h) \
+	$(riscv_insn_svinval) \
+	$(riscv_insn_ext_cmo) \
+	$(riscv_insn_ext_zicond) \
 
-	# $(riscv_insn_ext_a) \
-	# $(riscv_insn_ext_c) \
-	# $(riscv_insn_ext_i) \
-	# $(riscv_insn_ext_m) \
-	# $(riscv_insn_ext_f) \
-	# $(riscv_insn_ext_d) \
-	# $(riscv_insn_ext_zfh) \
-	# $(riscv_insn_ext_q) \
-	# $(riscv_insn_ext_b) \
-    # $(riscv_insn_ext_k) \
-	# $(if $(HAVE_INT128),$(riscv_insn_ext_v),) \
-	# $(riscv_insn_ext_h) \
-	# $(riscv_insn_ext_p) \
-	# $(riscv_insn_priv) \
-	# $(riscv_insn_svinval) \
-	# $(riscv_insn_ext_cmo) \
-
-riscv_gen_srcs = \
-	$(addsuffix .cc,$(riscv_insn_list))
+riscv_gen_srcs = $(addsuffix .cc,$(riscv_insn_list))
 
 insn_list.h: $(src_dir)/riscv/riscv.mk.in
 	for insn in $(foreach insn,$(riscv_insn_list),$(subst .,_,$(insn))) ; do \
