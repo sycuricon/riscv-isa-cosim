@@ -5,9 +5,10 @@ cosim_subproject_deps = \
 	disasm 				\
 	riscv 				\
 
-cosim_srcs = 	\
-  cj.cc 		\
-  masker.cc     \
+cosim_srcs = 		\
+  cj.cc 			\
+  morpher.cc		\
+  magic_device.cc
 
 cosim_install_prog_srcs = \
 

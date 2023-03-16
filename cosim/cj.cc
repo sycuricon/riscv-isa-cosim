@@ -5,6 +5,7 @@
 #include "../VERSION"
 #include "elfloader.h"
 #include "magic_type.h"
+#include "decode_macros.h"
 
 #include <cstdio>
 #include <sstream>
@@ -53,15 +54,17 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   // cj_debug = false;
 
   // create memory and debug mmu
-  mems.push_back(
-      std::make_pair(cfg.mem_base(),
-        new mem_t(cfg.mem_size() << 20)));
-  bus.add_device(mems[0].first, mems[0].second);
-  debug_mmu = new mmu_t(this, NULL);
+  std::vector<std::pair<reg_t, mem_t*>> mems;
+  for (const auto &cfg : cfg.mem_layout())
+    mems.push_back(std::make_pair(cfg.get_base(), new mem_t(cfg.get_size())));
+  for (auto& x : mems)
+    bus.add_device(x.first, x.second);
+
+  debug_mmu = new mmu_t(this, cfg.endianness, NULL);
 
   // create processor
   for (size_t i = 0; i < cfg.nprocs(); i++) {
-    procs.push_back(new processor_t(isa, cfg.varch(), this, i, false, cfg.logfile(), sout_));
+    procs.push_back(new processor_t(&isa, &cfg, this, cfg.hartids()[i], false, cfg.logfile(), sout_));
     if (!procs[i]) {
       std::cerr << "processor [" << i << "] create failed!\n";
       exit(1);
@@ -87,7 +90,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     std::pair<reg_t, reg_t> initrd_bounds = cfg.initrd_bounds();
     dts = make_dts(cfg.time_freq_count(), cfg.cycle_freq(),
                    initrd_bounds.first, initrd_bounds.second,
-                   cfg.bootargs(), procs, mems);
+                   cfg.bootargs(), cfg.pmpregions, procs, mems);
     dtb = dts_compile(dts);
   }
 
@@ -186,13 +189,15 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   fprintf(stderr, "- core %ld, isa: %s %s %s\n",
           cfg.nprocs(), cfg.isa(), cfg.priv(), cfg.varch());
   fprintf(stderr, "- elf file: %s\n", cfg.elffile());
-  fprintf(stderr, "- memory configuration: 0x%lx 0x%lx, tohost: 0x%lx\n",
-          cfg.mem_base(), cfg.mem_size() << 20, tohost_addr);
+  fprintf(stderr, "- tohost address: 0x%lx\n", tohost_addr);
+  fprintf(stderr, "- memory configuration:\n");
+  for (auto& m: mems)
+    fprintf(stderr, "                         0x%lx 0x%lx\n", m.first, m.second->size());
   fprintf(stderr, "- fuzz information: [Handler] %ld page (0x%lx 0x%lx)\n",
           fuzz_handler_page_num, fuzz_handler_start_addr, fuzz_handler_end_addr);
   fprintf(stderr, "                    [Payload] %ld page (0x%lx 0x%lx)\n",
           fuzz_loop_page_num, fuzz_loop_entry_addr, fuzz_loop_exit_addr);  
-  procs[0]->get_state()->pc = cfg.mem_base();
+  procs[0]->get_state()->pc = cfg.start_pc();
 
   for (auto it = text_label.begin(); it != text_label.end(); it++) {
       std::cout << std::hex << (*it) << ' ';
@@ -306,10 +311,10 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
       masker_inst_t::fence_mutation();
     } 
 
-    auto data = debug_mmu->to_target(debug_mmu->load_uint64(tohost_addr));
+    auto data = debug_mmu->to_target(debug_mmu->load<uint64_t>(tohost_addr));
     memcpy(&tohost_data, &data, sizeof(data));  
   }
-  debug_mmu->store_uint64(tohost_addr, 0);  
+  debug_mmu->store<uint64_t>(tohost_addr, 0);  
 
 
   if (!check)
@@ -462,14 +467,14 @@ void cosim_cj_t::update_tohost_info() {
 // chunked_memif_t virtual function
 void cosim_cj_t::read_chunk(addr_t taddr, size_t len, void* dst) {
   assert(len == 8);
-  auto data = debug_mmu->to_target(debug_mmu->load_uint64(taddr));
+  auto data = debug_mmu->to_target(debug_mmu->load<uint64_t>(taddr));
   memcpy(dst, &data, sizeof data);
 }
 void cosim_cj_t::write_chunk(addr_t taddr, size_t len, const void* src) {
   assert(len == 8);
   target_endian<uint64_t> data;
   memcpy(&data, src, sizeof data);
-  debug_mmu->store_uint64(taddr, debug_mmu->from_target(data));
+  debug_mmu->store<uint64_t>(taddr, debug_mmu->from_target(data));
 }
 void cosim_cj_t::clear_chunk(addr_t taddr, size_t len) {
   char zeros[chunk_max_size()];
@@ -478,11 +483,8 @@ void cosim_cj_t::clear_chunk(addr_t taddr, size_t len) {
   for (size_t pos = 0; pos < len; pos += chunk_max_size())
     write_chunk(taddr + pos, std::min(len - pos, chunk_max_size()), zeros);
 }
-void cosim_cj_t::set_target_endianness(memif_endianness_t endianness) {
-  assert(endianness == memif_endianness_little);
-}
-memif_endianness_t cosim_cj_t::get_target_endianness() const {
-  return memif_endianness_little;
+endianness_t cosim_cj_t::get_target_endianness() const {
+  return endianness_little;
 }
 
 // simif_t virtual function
@@ -571,57 +573,14 @@ void cosim_cj_t::record_rd_mutation_stats(unsigned int matched_reg_count) {
   matched_reg_count_stat[matched_reg_count]++;
 }
 
+cosim_cj_t* current_simulator = NULL;
 
-// Magic device randomization function
-reg_t magic_t::rdm_dword(int width, int sgned) { // 1 for signed, 0 for unsigned, -1 for random
-  std::uniform_int_distribution<reg_t> rand(0, (reg_t)(-1));
-  reg_t mask = width == 64 ? -1 : (1LL << width)-1;
-  reg_t masked_val = rand(random) & mask;
-  bool sgn_ext = (sgned == -1) ? rand2(random) : sgned;
-  if ((masked_val >> (width - 1)) & sgn_ext)
-    masked_val |= ~mask;
-  return  masked_val;
+cosim_cj_t* get_simulator() {
+  assert(current_simulator != NULL);
+  return current_simulator;
 }
 
-reg_t magic_t::rdm_float(int type, int sgn, int botE, int botS) {   // 0 for 0, 1 for INF, 2 for qNAN, 3 for sNAN, 4 for normal, 5 for tiny, -1 for random
-  int topT = botE - 1;
-  std::uniform_int_distribution<reg_t> randType(0, 5);
-  std::uniform_int_distribution<reg_t> randE(1, (1 << (botS - botE)) - 2);
-  std::uniform_int_distribution<reg_t> randT(1, (1 << botE)-1);
-  std::uniform_int_distribution<reg_t> randS(0, (1 << topT)-1);
-
-  reg_t base = botS == 63 ? 0 : (-1LL) << (botS + 1);
-  reg_t sgn_bit = (sgn == -1 ? rand2(random) : (reg_t)sgn) << botS;
-  type = (type == -1) ? randType(random) : type;
-  switch (type) {
-    case 0: return base | sgn_bit | 0;
-    case 1: return base | sgn_bit | (255 << botE) | 0;
-    case 2: return base | sgn_bit | (255 << botE) | (randS(random) |  (1 << topT));
-    case 3: return base | sgn_bit | (255 << botE) | (randT(random) & ~(1 << topT));
-    case 4: return base | sgn_bit | (randE(random) << botE) | (rand2(random) << topT) | randS(random);
-    case 5: return base | sgn_bit |   (0 << botE) | randT(random);
-    default: return 0;
-  }
+void set_simulator(cosim_cj_t* current) {
+  current_simulator = current;
+  return;
 }
-
-reg_t magic_t::rdm_address(int r, int w, int x) {  // 1 for yes, 0 for no, -1 for random
-  if (x)
-    return simulator->get_random_text_address(random);
-  else
-    return simulator->get_random_data_address(random);
-}
-
-reg_t magic_t::rdm_epc_next(int smode) {
-  return simulator->get_exception_return_address(random, smode);
-}
-
-const std::vector<magic_type*> magic_generator_type({
-  &magic_int,           /* MAGIC_RANDOM         */
-  &magic_int,           /* MAGIC_RDM_WORD       */
-  &magic_float,         /* MAGIC_RDM_FLOAT      */
-  &magic_float,         /* MAGIC_RDM_DOUBLE     */
-  &magic_text_address,  /* MAGIC_RDM_TEXT_ADDR  */
-  &magic_data_address,  /* MAGIC_RDM_DATA_ADDR  */
-  &magic_text_address,  /* MAGIC_MEPC_NEXT      */
-  &magic_text_address   /* MAGIC_SEPC_NEXT      */
-});

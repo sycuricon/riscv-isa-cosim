@@ -1,4 +1,4 @@
-#include "masker.h"
+#include "morpher.h"
 #include "cj.h"
 #include "masker_insn_fields.h"
 
@@ -10,6 +10,7 @@ std::unordered_map<rdm_entry, uint64_t, rdm_entry::HashFunction> masker_inst_t::
 circular_queue<int, 16> masker_inst_t::rd_in_pipeline;
 magic_type *masker_inst_t::type[32];
 
+extern const std::vector<magic_type*> magic_generator_type;
 
 void decode_inst_opcode(masker_inst_t* dec) {
   rv_xlen xlen = dec->xlen;
@@ -716,7 +717,7 @@ rv_inst masker_inst_t::mutation(bool debug) {
         arg->value = randBits(20) << 12;
         break;
       case rv_field_imm_j:
-        arg->value = simulator->get_random_text_address(random) - pc;
+        arg->value = get_simulator()->get_random_text_address(random) - pc;
         break;
       case rv_field_imm_i:
         if (op == rv_op_jalr) {
@@ -732,7 +733,7 @@ rv_inst masker_inst_t::mutation(bool debug) {
       // imm_b is used for branch instruction
       // so should be given a valid exec addr
       case rv_field_imm_b:
-        arg->value = simulator->get_random_text_address(random) - pc;
+        arg->value = get_simulator()->get_random_text_address(random) - pc;
         break;
 
       case rv_field_cls_uimm6:
@@ -871,7 +872,7 @@ int masker_inst_t::rd_with_type(magic_type *t) {
   }
   int n = buf.size();
   if (t != &magic_void)
-    simulator->record_rd_mutation_stats(n);
+    get_simulator()->record_rd_mutation_stats(n);
 
   if (n > 0) {
     std::uniform_int_distribution<uint64_t> r(0, n-1);

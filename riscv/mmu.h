@@ -14,7 +14,7 @@
 #include "cfg.h"
 #include <stdlib.h>
 #include <vector>
-#include "masker.h"
+#include "morpher.h"
 
 // virtual memory configuration
 #define PGSHIFT 12

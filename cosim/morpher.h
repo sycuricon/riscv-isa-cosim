@@ -160,5 +160,4 @@ inline rv_hint hint_insn(uint64_t insn) {
     return not_hint;
 }
 
-
 #endif

@@ -5,7 +5,7 @@
 #include "simif.h"
 #include "memif.h"
 #include "config.h"
-#include "masker.h"
+#include "morpher.h"
 #include "devices.h"
 #include "platform.h"
 #include "processor.h"
@@ -22,21 +22,26 @@
 class config_t : public cfg_t {
 public:
   config_t()
-    : cfg_t(
-      std::make_pair((reg_t)0, (reg_t)0),
-      nullptr, 1, DEFAULT_ISA, DEFAULT_PRIV),
-      varch(DEFAULT_VARCH), logfile(stderr), dtsfile(NULL), elffile(NULL),
-      mem_base(DRAM_BASE), mem_size(2048),
+    : cfg_t(/*default_initrd_bounds=*/std::make_pair((reg_t)0, (reg_t)0),
+            /*default_bootargs=*/nullptr, 
+            /*default_isa=*/DEFAULT_ISA, 
+            /*default_priv=*/DEFAULT_PRIV,
+            /*default_varch=*/DEFAULT_VARCH,
+            /*default_misaligned=*/false,
+            /*default_endianness*/endianness_little,
+            /*default_pmpregions=*/16,
+            /*default_mem_layout=*/std::vector<mem_cfg_t> {mem_cfg_t(DRAM_BASE, reg_t(2048) << 20)},
+            /*default_hartids=*/std::vector<size_t>(),
+            /*default_real_time_clint=*/false,
+            /*default_trigger_count=*/4),
+      logfile(stderr), dtsfile(NULL), elffile(NULL),
       cycle_freq(1000000000), time_freq_count(100),
-      start_pc(-1), verbose(false), va_mask(0xffffffffffe00000UL)
+      start_pc(DRAM_BASE), verbose(false), va_mask(0xffffffffffe00000UL)
       {}
 
-  cfg_arg_t<const char *> varch;
   cfg_arg_t<FILE *> logfile;
   cfg_arg_t<const char *> dtsfile;
   cfg_arg_t<const char *> elffile;
-  cfg_arg_t<reg_t> mem_base;
-  cfg_arg_t<reg_t> mem_size;
   cfg_arg_t<size_t> cycle_freq;
   cfg_arg_t<size_t> time_freq_count;
   cfg_arg_t<reg_t> start_pc;
@@ -155,8 +160,7 @@ public:
   void clear_chunk(addr_t taddr, size_t len);
   size_t chunk_align() { return 8; }
   size_t chunk_max_size() { return 8; }
-  void set_target_endianness(memif_endianness_t endianness);
-  memif_endianness_t get_target_endianness() const;
+  endianness_t get_target_endianness() const;
 
   processor_t* get_core(size_t i) { return procs.at(i); }
   reg_t get_tohost() { return tohost_data; };
@@ -213,8 +217,11 @@ private:
   bool va_enable;
 };
 
+cosim_cj_t* get_simulator();
+void set_simulator(cosim_cj_t* current);
+
 class dummy_device_t : public abstract_device_t {
- public:
+public:
   dummy_device_t(size_t addr, size_t size) : mmio_addr(addr), mmio_size(size) {}
   bool load(reg_t addr, size_t len, uint8_t* bytes) { return (addr + len) <= mmio_size; }
   bool store(reg_t addr, size_t len, const uint8_t* bytes) { return (addr + len) <= mmio_size; }
@@ -225,45 +232,4 @@ private:
   size_t mmio_size;
 };
 
-extern const std::vector<magic_type*> magic_generator_type;
-
-class magic_t {
- public:
-  magic_t(): seed(0), rand2(0, 1) {
-    generator[MAGIC_RANDOM/8]         = std::bind(&magic_t::rdm_dword, this, 64, 0);
-    generator[MAGIC_RDM_WORD/8]       = std::bind(&magic_t::rdm_dword, this, 32, 1);
-    generator[MAGIC_RDM_FLOAT/8]      = std::bind(&magic_t::rdm_float, this, -1, -1, 23, 31);
-    generator[MAGIC_RDM_DOUBLE/8]     = std::bind(&magic_t::rdm_float, this, -1, -1, 52, 63);
-    generator[MAGIC_RDM_TEXT_ADDR/8]  = std::bind(&magic_t::rdm_address, this, 1, 1, 1);
-    generator[MAGIC_RDM_DATA_ADDR/8]  = std::bind(&magic_t::rdm_address, this, 1, 1, 0);
-    generator[MAGIC_MEPC_NEXT/8]      = std::bind(&magic_t::rdm_epc_next, this, 0);
-    generator[MAGIC_SEPC_NEXT/8]      = std::bind(&magic_t::rdm_epc_next, this, 1);
-    generator[MAGIC_RDM_PTE/8]        = std::bind(&magic_t::rdm_dword, this, 10, 0);
-  }
-  
-  reg_t load(reg_t addr) {
-    reg_t id = addr / 8;
-    reg_t tmp = id < generator.size() ? generator[id]() : 0;
-    // printf("[CJ] Magic read: %016lx -> %016lx\n", addr, tmp);
-    return tmp;
-  }
-  
-  size_t size() { return 4096; }
-  void set_seed(reg_t new_seed) { seed = new_seed; random.seed(seed); }
-
-  reg_t rdm_dword(int width, int sgned);                    // 1 for signed, 0 for unsigned, -1 for random
-  reg_t rdm_float(int type, int sgn, int botE, int botS);   // 0 for 0, 1 for INF, 2 for qNAN, 3 for sNAN, 4 for normal, 5 for tiny, -1 for random
-  reg_t rdm_address(int r, int w, int x);                   // 1 for yes, 0 for no, -1 for random
-  reg_t rdm_epc_next(int smode);                            // 1 for sepc, 0 for mepc
-  reg_t rdm_dummy() { return 0; }
-
- private:
-  reg_t seed;
-
-  std::default_random_engine random;
-  std::uniform_int_distribution<reg_t> rand2;
-  std::array<std::function<reg_t()>, MAX_MAGIC_SPACE/8> generator;
-};
-
-extern cosim_cj_t* simulator;
 #endif

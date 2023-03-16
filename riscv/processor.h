@@ -186,7 +186,7 @@ public:
               FILE *log_file, std::ostream& sout_); // because of command line option --log and -s we need both
   ~processor_t();
 
-  const isa_parser_t &get_isa() { return isa; }
+  const isa_parser_t &get_isa() { return *isa; }
   const cfg_t &get_cfg() { return *cfg; }
   bool commit_ecall;
 
