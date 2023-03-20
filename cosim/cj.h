@@ -17,36 +17,29 @@
 #include <random>
 #include <functional>
 
+class mmio_cfg_t
+{
+public:
+  mmio_cfg_t(reg_t base, reg_t size) 
+    : base(base), size(size) {}
+  reg_t base;
+  reg_t size;
+};
+
 
 // Using json to configure in future
 class config_t : public cfg_t {
 public:
-  config_t()
-    : cfg_t(/*default_initrd_bounds=*/std::make_pair((reg_t)0, (reg_t)0),
-            /*default_bootargs=*/nullptr, 
-            /*default_isa=*/DEFAULT_ISA, 
-            /*default_priv=*/DEFAULT_PRIV,
-            /*default_varch=*/DEFAULT_VARCH,
-            /*default_misaligned=*/false,
-            /*default_endianness*/endianness_little,
-            /*default_pmpregions=*/16,
-            /*default_mem_layout=*/std::vector<mem_cfg_t> {mem_cfg_t(DRAM_BASE, reg_t(2048) << 20)},
-            /*default_hartids=*/std::vector<size_t>(),
-            /*default_real_time_clint=*/false,
-            /*default_trigger_count=*/4),
-      logfile(stderr), dtsfile(NULL), elffile(NULL),
-      cycle_freq(1000000000), time_freq_count(100),
-      start_pc(DRAM_BASE), verbose(false), va_mask(0xffffffffffe00000UL)
-      {}
-
+  config_t();
   cfg_arg_t<FILE *> logfile;
   cfg_arg_t<const char *> dtsfile;
-  cfg_arg_t<const char *> elffile;
+  cfg_arg_t<std::vector<std::string>> elffiles;
   cfg_arg_t<size_t> cycle_freq;
   cfg_arg_t<size_t> time_freq_count;
-  cfg_arg_t<reg_t> start_pc;
+  cfg_arg_t<reg_t> boot_addr;
   cfg_arg_t<bool> verbose;
   cfg_arg_t<reg_t> va_mask;
+  cfg_arg_t<std::vector<mmio_cfg_t>>  mmio_layout;
 };
 
 inline bool operator==(const float128_t& lhs, const float128_t& rhs) {
@@ -56,7 +49,6 @@ inline bool operator==(const float128_t& lhs, const float128_t& rhs) {
 inline bool operator!=(const float128_t& lhs, const float128_t& rhs) {
   return (lhs.v[0] != rhs.v[0]) || (lhs.v[1] != rhs.v[1]);
 }
-
 
 template <class T, size_t N, bool ignore_zero>
 class checkboard_t {
@@ -132,6 +124,8 @@ public:
   bool mmio_store(reg_t addr, size_t len, const uint8_t* bytes);
   void proc_reset(unsigned id);
   const char* get_symbol(uint64_t addr);
+  virtual const cfg_t &get_cfg() const override { return *cfg; }
+  virtual const std::map<size_t, processor_t*>& get_harts() const override { return harts; }
 
   bool in_fuzz_loop_range(uint64_t addr) {
     if (va_enable) {
@@ -177,9 +171,12 @@ public:
   void record_rd_mutation_stats(unsigned int matched_reg_count);
 
 private:
+  isa_parser_t isa;
+  const config_t* const cfg;
   std::vector<std::pair<reg_t, mem_t*>> mems;
   mmu_t* debug_mmu;
   std::vector<processor_t*> procs;
+  std::map<size_t, processor_t*> harts;
   std::vector<dummy_device_t*> mmios;
   reg_t start_pc;
   reg_t elf_entry;

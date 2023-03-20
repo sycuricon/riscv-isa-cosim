@@ -10,6 +10,37 @@
 #include <cstdio>
 #include <sstream>
 
+cosim_cj_t* current_simulator = NULL;
+
+cosim_cj_t* get_simulator() {
+  assert(current_simulator != NULL);
+  return current_simulator;
+}
+
+void set_simulator(cosim_cj_t* current) {
+  current_simulator = current;
+  return;
+}
+
+config_t::config_t()
+    : cfg_t(/*default_initrd_bounds=*/std::make_pair((reg_t)0, (reg_t)0),
+            /*default_bootargs=*/nullptr, 
+            /*default_isa=*/DEFAULT_ISA, 
+            /*default_priv=*/DEFAULT_PRIV,
+            /*default_varch=*/DEFAULT_VARCH,
+            /*default_misaligned=*/false,
+            /*default_endianness*/endianness_little,
+            /*default_pmpregions=*/16,
+            /*default_mem_layout=*/std::vector<mem_cfg_t> {mem_cfg_t(DRAM_BASE, reg_t(2048) << 20)},
+            /*default_hartids=*/std::vector<size_t> {size_t(0)},
+            /*default_real_time_clint=*/false,
+            /*default_trigger_count=*/4),
+      logfile(stderr), dtsfile(NULL), elffiles(std::vector<std::string>{}),
+      cycle_freq(1000000000), time_freq_count(100),
+      boot_addr(DRAM_BASE), verbose(false), va_mask(0xffffffffffe00000UL),
+      mmio_layout(std::vector<mmio_cfg_t> {})
+  {}
+
 const char *reg_name[32] = {
     "x0", "ra", "sp",  "gp",  "tp", "t0", "t1", "t2",
     "s0", "s1", "a0",  "a1",  "a2", "a3", "a4", "a5",
@@ -40,17 +71,19 @@ inline long unsigned int dump(const reg_t& x) { return x; }
     };
 
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
-  matched_reg_count_stat(33, 0), blind(false),
+  isa(cfg.isa(), cfg.priv()),
+  cfg(&cfg), matched_reg_count_stat(33, 0), blind(false),
   mmio_access(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
 
-  isa_parser_t isa(cfg.isa(), cfg.priv());
+  current_simulator = this;
+
   std::ostream sout_(nullptr);
   sout_.rdbuf(std::cerr.rdbuf());
 
   cj_debug = cfg.verbose();
   va_mask = cfg.va_mask();
-  blind = true;
+  blind = false;
   // cj_debug = false;
 
   // create memory and debug mmu
@@ -72,6 +105,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     procs[i]->set_debug(true);
     procs[i]->cosim_verbose = cfg.verbose();
     if (cfg.verbose()) procs[i]->enable_log_commits();
+    harts[cfg.hartids()[i]] = procs[i];
   }
 
   // create device tree and compile
@@ -149,6 +183,8 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
         procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SV39);
       } else if (strncmp(mmu_type, "riscv,sv48", strlen("riscv,sv48")) == 0) {
         procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SV48);
+      } else if (strncmp(mmu_type, "riscv,sv57", strlen("riscv,sv57")) == 0) {
+        procs[cpu_idx]->set_mmu_capability(IMPL_MMU_SV57);
       } else if (strncmp(mmu_type, "riscv,sbare", strlen("riscv,sbare")) == 0) {
         //has been set in the beginning
       } else {
@@ -171,15 +207,22 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   mmios.push_back(new dummy_device_t(0x2000000UL, 0x10000UL));
   mmios.push_back(new dummy_device_t(0x64000000UL, 0x1000UL));
   mmios.push_back(new dummy_device_t(0xc000000UL, 0x4000000UL));
+
+  for (auto device : cfg.mmio_layout())
+    mmios.push_back(new dummy_device_t(device.base, device.size));
+
   for (size_t i = 0; i < mmios.size(); i++)
-      bus.add_device(mmios[i]->addr(), mmios[i]);
+    bus.add_device(mmios[i]->addr(), mmios[i]);
 
   // load test elf and setup symbol table
-  if (!cfg.elffile()) {
+  if (cfg.elffiles().empty()) {
     std::cerr << "At least one testcase is required!\n";
     exit(1);
   }
-  load_testcase(cfg.elffile());
+
+  for(auto& elf : cfg.elffiles())
+    load_testcase(elf.c_str());
+
   magic.reset(new magic_t());
   masker_inst_t::reset_mutation_history();
 
@@ -188,23 +231,25 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   fprintf(stderr, "\t\tpowered by Spike " SPIKE_VERSION "\n");
   fprintf(stderr, "- core %ld, isa: %s %s %s\n",
           cfg.nprocs(), cfg.isa(), cfg.priv(), cfg.varch());
-  fprintf(stderr, "- elf file: %s\n", cfg.elffile());
-  fprintf(stderr, "- tohost address: 0x%lx\n", tohost_addr);
-  fprintf(stderr, "- memory configuration:\n");
-  for (auto& m: mems)
-    fprintf(stderr, "                         0x%lx 0x%lx\n", m.first, m.second->size());
+
+  fprintf(stderr, "- memory configuration:");
+  for (auto& m: mems) {
+    fprintf(stderr, " 0x%lx@0x%lx", m.first, m.second->size());
+  } fprintf(stderr, "\n");
+
+  fprintf(stderr, "- elf file list:");
+  for (auto& elf: cfg.elffiles()) {
+    fprintf(stderr, " %s", elf.c_str());
+  } fprintf(stderr, "\n");
+
+  fprintf(stderr, "- tohost address: 0x%lx\n", tohost_addr);  
   fprintf(stderr, "- fuzz information: [Handler] %ld page (0x%lx 0x%lx)\n",
           fuzz_handler_page_num, fuzz_handler_start_addr, fuzz_handler_end_addr);
   fprintf(stderr, "                    [Payload] %ld page (0x%lx 0x%lx)\n",
-          fuzz_loop_page_num, fuzz_loop_entry_addr, fuzz_loop_exit_addr);  
-  procs[0]->get_state()->pc = cfg.start_pc();
+          fuzz_loop_page_num, fuzz_loop_entry_addr, fuzz_loop_exit_addr);
 
-  for (auto it = text_label.begin(); it != text_label.end(); it++) {
-      std::cout << std::hex << (*it) << ' ';
-  } std::cout << '\n';
-  for (auto it = data_label.begin(); it != data_label.end(); it++) {
-      std::cout << std::hex << (*it) << ' ';
-  } std::cout << '\n';
+  procs[0]->get_state()->pc = cfg.boot_addr();
+
 }
 
 cosim_cj_t::~cosim_cj_t() {
@@ -571,16 +616,4 @@ uint64_t cosim_cj_t::get_exception_return_address(std::default_random_engine &ra
 
 void cosim_cj_t::record_rd_mutation_stats(unsigned int matched_reg_count) {
   matched_reg_count_stat[matched_reg_count]++;
-}
-
-cosim_cj_t* current_simulator = NULL;
-
-cosim_cj_t* get_simulator() {
-  assert(current_simulator != NULL);
-  return current_simulator;
-}
-
-void set_simulator(cosim_cj_t* current) {
-  current_simulator = current;
-  return;
 }

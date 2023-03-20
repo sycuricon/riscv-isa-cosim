@@ -13,3 +13,5 @@ cosim_srcs = 		\
 cosim_install_prog_srcs = \
 
 cosim_install_lib = yes
+
+cosim_install_shared_lib = yes
