@@ -355,13 +355,14 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
       if (cj_debug) printf("\e[1;33m[CJ] Reset mutation queue\e[0m\n");
       masker_inst_t::fence_mutation();
     } 
-
-    auto data = debug_mmu->to_target(debug_mmu->load<uint64_t>(tohost_addr));
-    memcpy(&tohost_data, &data, sizeof(data));  
   }
-  debug_mmu->store<uint64_t>(tohost_addr, 0);  
 
-
+  if (tohost_addr) {
+    auto data = debug_mmu->to_target(debug_mmu->load<uint64_t>(tohost_addr));
+    memcpy(&tohost_data, &data, sizeof(data));
+    debug_mmu->store<uint64_t>(tohost_addr, 0);
+  }
+  
   if (!check)
     return 0;
 
@@ -369,7 +370,6 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
   uint32_t sim_insn = s->last_insn;
   size_t regNo, fregNo;
   if (s->XPR.get_last_write(regNo)) {
-  //  printf("write back: %d %016lx\n", regNo, s->XPR[regNo]);
     if (!check_board.set(regNo, s->XPR[regNo], dut_insn, dut_pc, get_mmio_access())) {
       printf("\x1b[31m[error] check board set %ld error \x1b[0m\n", regNo);
       if (blind) {
@@ -440,8 +440,8 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         check_board.clear(dut_waddr);
         return 0;
       } else if ((check_board.get_insn(dut_waddr) & 0x7f) == 0x73) {
-        // printf("\x1b[31m[warn] %016lx@%08lx CSR UNMATCH \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
-        //   check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
+        printf("\x1b[31m[warn] %016lx@%08x CSR UNMATCH \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
+        check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
         s->XPR.write(dut_waddr, dut_wdata);
         check_board.clear(dut_waddr);
         return 0;
