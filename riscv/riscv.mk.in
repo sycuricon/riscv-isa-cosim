@@ -9,6 +9,8 @@ riscv_subproject_deps = \
 
 riscv_CFLAGS = -fPIC
 
+riscv_install_lib = yes
+
 riscv_install_shared_lib = yes
 
 riscv_install_prog_srcs = \
