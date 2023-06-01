@@ -37,12 +37,10 @@ processor_t::processor_t(const isa_parser_t *isa, const cfg_t *cfg,
   log_file(log_file), sout_(sout_.rdbuf()), halt_on_reset(halt_on_reset),
   in_wfi(false), check_triggers_icount(false),
   impl_table(256, false), extension_enable_table(isa->get_extension_table()),
-  last_pc(1), executions(1), TM(cfg->trigger_count)
+  last_pc(1), executions(1), commit_ecall(false), TM(cfg->trigger_count)
 {
   VU.p = this;
   TM.proc = this;
-
-  commit_ecall = true;
 
 #ifndef __SIZEOF_INT128__
   if (extension_enabled('V')) {
@@ -540,6 +538,11 @@ void processor_t::set_histogram(bool value)
 void processor_t::enable_log_commits()
 {
   log_commits_enabled = true;
+}
+
+void processor_t::enable_commit_ecall()
+{
+  commit_ecall = true;
 }
 
 void processor_t::reset()

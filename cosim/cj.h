@@ -39,7 +39,9 @@ public:
   cfg_arg_t<reg_t> boot_addr;
   cfg_arg_t<bool> verbose;
   cfg_arg_t<reg_t> va_mask;
-  cfg_arg_t<std::vector<mmio_cfg_t>>  mmio_layout;
+  cfg_arg_t<std::vector<mmio_cfg_t>> mmio_layout;
+  cfg_arg_t<bool> blind;
+  cfg_arg_t<bool> commit_ecall;
 };
 
 inline bool operator==(const float128_t& lhs, const float128_t& rhs) {

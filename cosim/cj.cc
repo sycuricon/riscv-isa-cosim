@@ -23,22 +23,23 @@ void set_simulator(cosim_cj_t* current) {
 }
 
 config_t::config_t()
-    : cfg_t(/*default_initrd_bounds=*/std::make_pair((reg_t)0, (reg_t)0),
-            /*default_bootargs=*/nullptr, 
-            /*default_isa=*/DEFAULT_ISA, 
-            /*default_priv=*/DEFAULT_PRIV,
-            /*default_varch=*/DEFAULT_VARCH,
-            /*default_misaligned=*/false,
-            /*default_endianness*/endianness_little,
-            /*default_pmpregions=*/16,
-            /*default_mem_layout=*/std::vector<mem_cfg_t> {mem_cfg_t(DRAM_BASE, reg_t(2048) << 20)},
-            /*default_hartids=*/std::vector<size_t> {size_t(0)},
-            /*default_real_time_clint=*/false,
-            /*default_trigger_count=*/4),
+    : cfg_t(
+        /*default_initrd_bounds=*/ std::make_pair((reg_t)0, (reg_t)0),
+        /*default_bootargs=*/ nullptr, 
+        /*default_isa=*/ DEFAULT_ISA, 
+        /*default_priv=*/ DEFAULT_PRIV,
+        /*default_varch=*/ DEFAULT_VARCH,
+        /*default_misaligned=*/ false,
+        /*default_endianness*/ endianness_little,
+        /*default_pmpregions=*/ 16,
+        /*default_mem_layout=*/ std::vector<mem_cfg_t> {mem_cfg_t(DRAM_BASE, reg_t(2048) << 20)},
+        /*default_hartids=*/ std::vector<size_t> {size_t(0)},
+        /*default_real_time_clint=*/ false,
+        /*default_trigger_count=*/ 4),
       logfile(stderr), dtsfile(NULL), elffiles(std::vector<std::string>{}),
       cycle_freq(1000000000), time_freq_count(100),
       boot_addr(DRAM_BASE), verbose(false), va_mask(0xffffffffffe00000UL),
-      mmio_layout(std::vector<mmio_cfg_t> {})
+      mmio_layout(std::vector<mmio_cfg_t> {}), blind(false), commit_ecall(false)
   {}
 
 const char *reg_name[32] = {
@@ -83,7 +84,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
 
   cj_debug = cfg.verbose();
   va_mask = cfg.va_mask();
-  blind = false;
+  blind = cfg.blind();
   // cj_debug = false;
 
   // create memory and debug mmu
@@ -106,6 +107,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     procs[i]->cosim_verbose = cfg.verbose();
     if (cfg.verbose()) procs[i]->enable_log_commits();
     harts[cfg.hartids()[i]] = procs[i];
+    if (cfg.commit_ecall()) procs[i]->enable_commit_ecall();
   }
 
   // create device tree and compile

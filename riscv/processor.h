@@ -188,11 +188,11 @@ public:
 
   const isa_parser_t &get_isa() { return *isa; }
   const cfg_t &get_cfg() { return *cfg; }
-  bool commit_ecall;
 
   void set_debug(bool value);
   void set_histogram(bool value);
   void enable_log_commits();
+  void enable_commit_ecall();
   bool get_log_commits_enabled() const { return log_commits_enabled; }
   void reset();
   void step(size_t n, bool check_intrpt=true); // run for n cycles
@@ -355,6 +355,9 @@ private:
 
   // Track repeated executions for processor_t::disasm()
   uint64_t last_pc, last_bits, executions;
+
+  // cosimulation
+  bool commit_ecall;
 public:
   entropy_source es; // Crypto ISE Entropy source.
 
