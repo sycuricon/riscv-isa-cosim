@@ -39,7 +39,8 @@ config_t::config_t()
       logfile(stderr), dtsfile(NULL), elffiles(std::vector<std::string>{}),
       cycle_freq(1000000000), time_freq_count(100),
       boot_addr(DRAM_BASE), verbose(false), va_mask(0xffffffffffe00000UL),
-      mmio_layout(std::vector<mmio_cfg_t> {}), blind(false), commit_ecall(false)
+      mmio_layout(std::vector<mmio_cfg_t> {}), blind(false), commit_ecall(false),
+      sync_state(false)
   {}
 
 const char *reg_name[32] = {
@@ -73,7 +74,7 @@ inline long unsigned int dump(const reg_t& x) { return x; }
 
 cosim_cj_t::cosim_cj_t(config_t& cfg) :
   isa(cfg.isa(), cfg.priv()),
-  cfg(&cfg), matched_reg_count_stat(33, 0), blind(false),
+  cfg(&cfg), matched_reg_count_stat(33, 0),
   mmio_access(false), tohost_addr(0), tohost_data(0),
   start_randomize(false) {
 
@@ -85,6 +86,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   cj_debug = cfg.verbose();
   va_mask = cfg.va_mask();
   blind = cfg.blind();
+  sync_state = cfg.sync_state();
   // cj_debug = false;
 
   // create memory and debug mmu
@@ -426,6 +428,8 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         printf("\x1b[31m[error] %016lx@%08x float check board check %d error \x1b[0m\n", f_check_board.get_pc(dut_waddr), f_check_board.get_insn(dut_waddr), dut_waddr);
         DUMP_STATE;
         if (blind) {
+          if (!sync_state)
+            tohost_data = 1;
           s->FPR.write(dut_waddr, freg(f64(dut_wdata)));
           f_check_board.clear(dut_waddr);
           return 0;
@@ -442,8 +446,10 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         check_board.clear(dut_waddr);
         return 0;
       } else if ((check_board.get_insn(dut_waddr) & 0x7f) == 0x73) {
-        printf("\x1b[31m[warn] %016lx@%08x CSR UNMATCH \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
-        check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
+        // printf("\x1b[31m[warn] %016lx@%08x CSR UNMATCH \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
+        // check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
+        if (!sync_state)
+          tohost_data = 1;
         s->XPR.write(dut_waddr, dut_wdata);
         check_board.clear(dut_waddr);
         return 0;
@@ -453,6 +459,8 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         printf("\x1b[31m[error] %016lx@%08x check board clear %d error \x1b[0m\n", check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dut_waddr);
         DUMP_STATE;
         if (blind) {
+          if (!sync_state)
+            tohost_data = 1;
           s->XPR.write(dut_waddr, dut_wdata);
           check_board.clear(dut_waddr);
           return 0;

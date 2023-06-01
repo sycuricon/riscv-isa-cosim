@@ -42,6 +42,7 @@ public:
   cfg_arg_t<std::vector<mmio_cfg_t>> mmio_layout;
   cfg_arg_t<bool> blind;
   cfg_arg_t<bool> commit_ecall;
+  cfg_arg_t<bool> sync_state;
 };
 
 inline bool operator==(const float128_t& lhs, const float128_t& rhs) {
@@ -192,6 +193,7 @@ private:
 
   std::vector<unsigned int> matched_reg_count_stat;
   
+  bool sync_state;
   bool blind;
   bool cj_debug;
   bool mmio_access;
