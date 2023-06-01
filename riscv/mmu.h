@@ -254,7 +254,7 @@ public:
       masker_inst_t rdm_insn(insn, rv64, addr);
       insn = rdm_insn.replay_mutation(proc->cosim_verbose);
       int high = 64 - length * 8;
-      insn = (((int64_t)insn) << high) >> high;
+      insn = (((uint64_t)insn) << high) >> high;
 
       // printf("\e[1;33m[CJ] insn randomize: %016lx @ %08lx -> %08lx\e[0m\n", addr, rdm_insn.inst, insn);
       // insn = dut_insn;
