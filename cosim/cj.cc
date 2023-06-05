@@ -93,6 +93,11 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   std::vector<std::pair<reg_t, mem_t*>> mems;
   for (const auto &cfg : cfg.mem_layout())
     mems.push_back(std::make_pair(cfg.get_base(), new mem_t(cfg.get_size())));
+
+  // rom * 2
+  mems.push_back(std::make_pair(0x10000UL, new mem_t(0x10000UL)));
+  mems.push_back(std::make_pair(0x20000UL, new mem_t(0x2000UL)));
+    
   for (auto& x : mems)
     bus.add_device(x.first, x.second);
 
@@ -203,11 +208,9 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     cpu_idx++;
   }
 
-  // magic device, error device, rom*2, clint, uart, plic
+  // magic device, error device, clint, uart, plic
   mmios.push_back(new dummy_device_t(0x0UL, 0x1000UL));
   mmios.push_back(new dummy_device_t(0x3000UL, 0x1000UL));
-  mmios.push_back(new dummy_device_t(0x10000UL, 0x10000UL));
-  mmios.push_back(new dummy_device_t(0x20000UL, 0x2000UL));
   mmios.push_back(new dummy_device_t(0x2000000UL, 0x10000UL));
   mmios.push_back(new dummy_device_t(0x64000000UL, 0x1000UL));
   mmios.push_back(new dummy_device_t(0xc000000UL, 0x4000000UL));
@@ -446,10 +449,13 @@ int cosim_cj_t::cosim_judge_stage(int hartid, int dut_waddr, reg_t dut_wdata, bo
         check_board.clear(dut_waddr);
         return 0;
       } else if ((check_board.get_insn(dut_waddr) & 0x7f) == 0x73) {
-        // printf("\x1b[31m[warn] %016lx@%08x CSR UNMATCH \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
-        // check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
-        if (!sync_state)
+        if (!sync_state) {
           tohost_data = 1;
+          printf("\x1b[31m[error] %016lx@%08x CSR UNMATCH \x1b[33mSIM %016lx\x1b[31m, DUT \x1b[36m%016lx \x1b[0m\n", 
+        check_board.get_pc(dut_waddr), check_board.get_insn(dut_waddr), dump(check_board.get_data(dut_waddr)), dump(dut_wdata));
+          DUMP_STATE;
+        }
+          
         s->XPR.write(dut_waddr, dut_wdata);
         check_board.clear(dut_waddr);
         return 0;
