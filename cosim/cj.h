@@ -173,6 +173,21 @@ public:
   //debug
   void record_rd_mutation_stats(unsigned int matched_reg_count);
 
+  unsigned long get_instruction_count() {
+    unsigned long count = 0;
+    for (size_t i = 0; i < procs.size(); i++)
+      count += procs[i]->get_state()->minstret->read();
+    return count;
+  }
+
+  void setup_debug_mode() {
+    for (size_t i = 0; i < procs.size(); i++) {
+      procs[i]->get_state()->dcsr->ebreakm = 1;
+      procs[i]->get_state()->dcsr->ebreaks = 1;
+      procs[i]->get_state()->dcsr->ebreaku = 1;
+    }
+  }
+
 private:
   isa_parser_t isa;
   const config_t* const cfg;
