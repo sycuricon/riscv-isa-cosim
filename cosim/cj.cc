@@ -91,7 +91,7 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
   // cj_debug = false;
 
   // create memory and debug mmu
-  std::vector<std::pair<reg_t, mem_t*>> mems;
+  std::vector<std::pair<reg_t, abstract_mem_t*>> mems;
   for (const auto &cfg : cfg.mem_layout())
     mems.push_back(std::make_pair(cfg.get_base(), new mem_t(cfg.get_size())));
 
@@ -132,9 +132,11 @@ cosim_cj_t::cosim_cj_t(config_t& cfg) :
     dtb = strstream.str();
   } else {
     std::pair<reg_t, reg_t> initrd_bounds = cfg.initrd_bounds();
+    std::string dump_serial0 = "SERIAL0: dummy_stdout {};";
     dts = make_dts(cfg.time_freq_count(), cfg.cycle_freq(),
                    initrd_bounds.first, initrd_bounds.second,
-                   cfg.bootargs(), cfg.pmpregions, procs, mems);
+                   cfg.bootargs(), cfg.pmpregions, procs, mems, 
+                   dump_serial0);
     dtb = dts_compile(dts);
   }
 
@@ -536,10 +538,10 @@ void cosim_cj_t::handle_tohost() {
               uint64_t len = magic_mem[3];
               std::vector<char> buf(len);
               tmp.read(magic_mem[2], len, buf.data());
-              write(1,buf.data(),len);
+              ssize_t ret = write(1,buf.data(),len);
             }
             else {
-              printf("[CJ] unsupported syscall #%d!\n", magic_mem[0]);
+              printf("[CJ] unsupported syscall #%ld!\n", magic_mem[0]);
             }
 
           }
