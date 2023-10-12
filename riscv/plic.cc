@@ -1,7 +1,10 @@
 #include <sys/time.h>
+#include <sstream>
 #include "devices.h"
 #include "processor.h"
 #include "simif.h"
+#include "sim.h"
+#include "dts.h"
 
 #define PLIC_MAX_CONTEXTS 15872
 
@@ -48,6 +51,9 @@
 #define PRIORITY_BASE           0
 #define PRIORITY_PER_ID         4
 
+/* Each interrupt source has a pending bit associated with it. */
+#define PENDING_BASE            0x1000
+
 /*
  * Each hart context has a vector of interupt enable bits associated with it.
  * There's one bit for each interrupt source.
@@ -67,7 +73,7 @@
 
 #define REG_SIZE                0x1000000
 
-plic_t::plic_t(simif_t* sim, uint32_t ndev)
+plic_t::plic_t(const simif_t* sim, uint32_t ndev)
   : num_ids(ndev + 1), num_ids_word(((ndev + 1) + (32 - 1)) / 32),
   max_prio((1UL << PLIC_PRIO_BITS) - 1), priority{}, level{}
 {
@@ -152,6 +158,21 @@ bool plic_t::priority_write(reg_t offset, uint32_t val)
     val &= ((1 << PLIC_PRIO_BITS) - 1);
     priority[id] = val;
   }
+
+  return true;
+}
+
+bool plic_t::pending_read(reg_t offset, uint32_t *val)
+{
+  uint32_t id_word = (offset >> 2);
+
+  if (id_word < num_ids_word) {
+    *val = 0;
+    for (auto context: contexts) {
+        *val |= context.pending[id_word];
+    }
+  } else
+    *val = 0;
 
   return true;
 }
@@ -313,8 +334,10 @@ bool plic_t::load(reg_t addr, size_t len, uint8_t* bytes)
       return false;
   }
 
-  if (PRIORITY_BASE <= addr && addr < ENABLE_BASE) {
+  if (PRIORITY_BASE <= addr && addr < PENDING_BASE) {
     ret = priority_read(addr, &val);
+  } else if (PENDING_BASE <= addr && addr < ENABLE_BASE) {
+    ret = pending_read(addr - PENDING_BASE, &val);
   } else if (ENABLE_BASE <= addr && addr < CONTEXT_BASE) {
     uint32_t cntx = (addr - ENABLE_BASE) / ENABLE_PER_HART;
     addr -= cntx * ENABLE_PER_HART + ENABLE_BASE;
@@ -368,3 +391,37 @@ bool plic_t::store(reg_t addr, size_t len, const uint8_t* bytes)
 
   return ret;
 }
+
+std::string plic_generate_dts(const sim_t* sim)
+{
+  std::stringstream s;
+  s << std::hex
+    << "    PLIC: plic@" << PLIC_BASE << " {\n"
+       "      compatible = \"riscv,plic0\";\n"
+       "      #address-cells = <2>;\n"
+       "      interrupts-extended = <" << std::dec;
+  for (size_t i = 0; i < sim->get_cfg().nprocs(); i++)
+    s << "&CPU" << i << "_intc 11 &CPU" << i << "_intc 9 ";
+  reg_t plicbs = PLIC_BASE;
+  reg_t plicsz = PLIC_SIZE;
+  s << std::hex << ">;\n"
+      "      reg = <0x" << (plicbs >> 32) << " 0x" << (plicbs & (uint32_t)-1) <<
+      " 0x" << (plicsz >> 32) << " 0x" << (plicsz & (uint32_t)-1) << ">;\n"
+      "      riscv,ndev = <0x" << PLIC_NDEV << ">;\n"
+      "      riscv,max-priority = <0x" << ((1U << PLIC_PRIO_BITS) - 1) << ">;\n"
+      "      #interrupt-cells = <1>;\n"
+      "      interrupt-controller;\n"
+      "    };\n";
+  return s.str();
+}
+
+plic_t* plic_parse_from_fdt(const void* fdt, const sim_t* sim, reg_t* base)
+{
+  uint32_t plic_ndev;
+  if (fdt_parse_plic(fdt, base, &plic_ndev, "riscv,plic0") == 0)
+    return new plic_t(sim, plic_ndev);
+  else
+    return nullptr;
+}
+
+REGISTER_DEVICE(plic, plic_parse_from_fdt, plic_generate_dts)

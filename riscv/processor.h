@@ -85,7 +85,11 @@ struct state_t
   // control and status registers
   std::unordered_map<reg_t, csr_t_p> csrmap;
   reg_t prv;    // TODO: Can this be an enum instead?
+  reg_t prev_prv;
+  bool prv_changed;
+  bool v_changed;
   bool v;
+  bool prev_v;
   misa_csr_t_p misa;
   mstatus_csr_t_p mstatus;
   csr_t_p mstatush;
@@ -101,12 +105,21 @@ struct state_t
   csr_t_p mideleg;
   csr_t_p mcounteren;
   csr_t_p mevent[N_HPMCOUNTERS];
+  csr_t_p mnstatus;
+  csr_t_p mnepc;
   csr_t_p scounteren;
   csr_t_p sepc;
   csr_t_p stval;
   csr_t_p stvec;
   virtualized_csr_t_p satp;
   csr_t_p scause;
+
+  // When taking a trap into HS-mode, we must access the nonvirtualized HS-mode CSRs directly:
+  csr_t_p nonvirtual_stvec;
+  csr_t_p nonvirtual_scause;
+  csr_t_p nonvirtual_sepc;
+  csr_t_p nonvirtual_stval;
+  sstatus_proxy_csr_t_p nonvirtual_sstatus;
 
   csr_t_p mtval2;
   csr_t_p mtinst;
@@ -261,8 +274,7 @@ public:
       throw trap_instruction_address_misaligned(state.v, pc, 0, 0);
   }
   reg_t legalize_privilege(reg_t);
-  void set_privilege(reg_t);
-  void set_virt(bool);
+  void set_privilege(reg_t, bool);
   const char* get_privilege_string();
   void update_histogram(reg_t pc);
   const disassembler_t* get_disassembler() { return disassembler; }
@@ -299,6 +311,9 @@ public:
 
   const char* get_symbol(uint64_t addr);
 
+  void clear_waiting_for_interrupt() { in_wfi = false; };
+  bool is_waiting_for_interrupt() { return in_wfi; };
+
 private:
   const isa_parser_t * const isa;
   const cfg_t * const cfg;
@@ -333,7 +348,7 @@ private:
   void take_pending_interrupt() { take_interrupt(state.mip->read() & state.mie->read()); }
   void take_interrupt(reg_t mask); // take first enabled interrupt in mask
   void take_trap(trap_t& t, reg_t epc); // take an exception
-  void take_trigger_action(triggers::action_t action, reg_t breakpoint_tval, reg_t epc);
+  void take_trigger_action(triggers::action_t action, reg_t breakpoint_tval, reg_t epc, bool virt);
   void disasm(insn_t insn); // disassemble and print an instruction
   int paddr_bits();
 

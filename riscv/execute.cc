@@ -85,7 +85,7 @@ static void commit_log_print_insn(processor_t *p, reg_t pc, insn_t insn)
     if (item.first == 0)
       continue;
 
-    char prefix;
+    char prefix = ' ';
     int size;
     int rd = item.first >> 4;
     bool is_vec = false;
@@ -232,6 +232,8 @@ void processor_t::step(size_t n, bool check_intrpt)
     size_t instret = 0;
     reg_t pc = state.pc;
     mmu_t* _mmu = mmu;
+    state.prv_changed = false;
+    state.v_changed = false;
 
     #define advance_pc() \
       if (unlikely(invalid_pc(pc))) { \
@@ -270,11 +272,11 @@ void processor_t::step(size_t n, bool check_intrpt)
             state.single_step = state.STEP_STEPPED;
           }
 
-          if (!state.serialized) {
+          if (!state.serialized && check_triggers_icount) {
             auto match = TM.detect_icount_match();
             if (match.has_value()) {
               assert(match->timing == triggers::TIMING_BEFORE);
-              throw triggers::matched_t((triggers::operation_t)0, 0, match->action);
+              throw triggers::matched_t((triggers::operation_t)0, 0, match->action, state.v);
             }
           }
 
@@ -321,7 +323,7 @@ void processor_t::step(size_t n, bool check_intrpt)
       // Trigger action takes priority over single step
       auto match = TM.detect_trap_match(t);
       if (match.has_value())
-        take_trigger_action(match->action, 0, state.pc);
+        take_trigger_action(match->action, 0, state.pc, 0);
       else if (unlikely(state.single_step == state.STEP_STEPPED)) {
         state.single_step = state.STEP_NONE;
         enter_debug_mode(DCSR_CAUSE_STEP);
@@ -333,7 +335,7 @@ void processor_t::step(size_t n, bool check_intrpt)
         delete mmu->matched_trigger;
         mmu->matched_trigger = NULL;
       }
-      take_trigger_action(t.action, t.address, pc);
+      take_trigger_action(t.action, t.address, pc, t.gva);
     }
     catch(trap_debug_mode&)
     {

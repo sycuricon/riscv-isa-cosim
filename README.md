@@ -49,20 +49,9 @@ Spike supports the following RISC-V ISA features:
   - Zcd extension, v1.0
   - Zcmp extension, v1.0
   - Zcmt extension, v1.0
-
-As a Spike extension, the remainder of the proposed
-[Bit-Manipulation Extensions](https://github.com/riscv/riscv-bitmanip)
-is provided under the Spike-custom extension name _Xbitmanip_.
-These instructions (and, of course, the extension name) are not RISC-V
-standards.
-
-These proposed bit-manipulation extensions can be split into further
-groups: Zbp, Zbs, Zbe, Zbf, Zbc, Zbm, Zbr, Zbt. Note that Zbc is
-ratified, but the original proposal contained some extra instructions
-(64-bit carryless multiplies) which are captured here.
-
-To enable these extensions individually, use the Spike-custom
-extension names _XZbp_, _XZbs_, _XZbc_, and so on.
+  - Zfbfmin extension, v0.6
+  - Zvfbfmin extension, v0.6
+  - Zvfbfwma extension, v0.6
 
 Versioning and APIs
 -------------------
@@ -251,12 +240,12 @@ Listening for remote bitbang connection on port 9824.
 In a separate shell run OpenOCD with the appropriate configuration file:
 ```
 $ cat spike.cfg 
-interface remote_bitbang
-remote_bitbang_host localhost
-remote_bitbang_port 9824
+adapter driver remote_bitbang
+remote_bitbang host localhost
+remote_bitbang port 9824
 
 set _CHIPNAME riscv
-jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0x10e31913
+jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0xdeadbeef
 
 set _TARGETNAME $_CHIPNAME.cpu
 target create $_TARGETNAME riscv -chain-position $_TARGETNAME

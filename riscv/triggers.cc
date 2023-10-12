@@ -55,16 +55,19 @@ void trigger_t::tdata3_write(processor_t * const proc, const reg_t val) noexcept
   sselect = (sselect_t)((proc->extension_enabled_const('S') && get_field(val, CSR_TEXTRA_SSELECT(xlen)) <= SSELECT_MAXVAL) ? get_field(val, CSR_TEXTRA_SSELECT(xlen)) : SSELECT_IGNORE);
 }
 
-bool trigger_t::common_match(processor_t * const proc) const noexcept {
-  return mode_match(proc->get_state()) && textra_match(proc);
+bool trigger_t::common_match(processor_t * const proc, bool use_prev_prv) const noexcept {
+  auto state = proc->get_state();
+  auto prv = use_prev_prv ? state->prev_prv : state->prv;
+  auto v = use_prev_prv ? state->prev_v : state->v;
+  return mode_match(prv, v) && textra_match(proc);
 }
 
-bool trigger_t::mode_match(state_t * const state) const noexcept
+bool trigger_t::mode_match(reg_t prv, bool v) const noexcept
 {
-  switch (state->prv) {
+  switch (prv) {
     case PRV_M: return m;
-    case PRV_S: return state->v ? vs : s;
-    case PRV_U: return state->v ? vu : u;
+    case PRV_S: return v ? vs : s;
+    case PRV_U: return v ? vu : u;
     default: assert(false);
   }
 }
@@ -81,7 +84,7 @@ bool trigger_t::textra_match(processor_t * const proc) const noexcept
     assert(CSR_TEXTRA32_SBYTEMASK_LENGTH < CSR_TEXTRA64_SBYTEMASK_LENGTH);
     for (int i = 0; i < CSR_TEXTRA64_SBYTEMASK_LENGTH; i++)
       if (sbytemask & (1 << i))
-        mask &= 0xff << (i * 8);
+        mask &= ~(reg_t(0xff) << (i * 8));
     if ((state->scontext->read() & mask) != (svalue & mask))
       return false;
   } else if (sselect == SSELECT_ASID) {
@@ -103,6 +106,21 @@ bool trigger_t::textra_match(processor_t * const proc) const noexcept
       return false;
   }
 
+  return true;
+}
+
+bool trigger_t::allow_action(const state_t * const state) const
+{
+  if (get_action() == ACTION_DEBUG_EXCEPTION) {
+    const bool mstatus_mie = state->mstatus->read() & MSTATUS_MIE;
+    const bool sstatus_sie = state->sstatus->read() & MSTATUS_SIE;
+    const bool vsstatus_sie = state->vsstatus->read() & MSTATUS_SIE;
+    const bool medeleg_breakpoint = (state->medeleg->read() >> CAUSE_BREAKPOINT) & 1;
+    const bool hedeleg_breakpoint = (state->hedeleg->read() >> CAUSE_BREAKPOINT) & 1;
+    return (state->prv != PRV_M || mstatus_mie) &&
+           (state->prv != PRV_S || state->v || !medeleg_breakpoint || sstatus_sie) &&
+           (state->prv != PRV_S || !state->v || !medeleg_breakpoint || !hedeleg_breakpoint || vsstatus_sie);
+  }
   return true;
 }
 
@@ -212,7 +230,7 @@ std::optional<match_result_t> mcontrol_common_t::detect_memory_access_match(proc
     value &= 0xffffffff;
   }
 
-  if (simple_match(xlen, value)) {
+  if (simple_match(xlen, value) && allow_action(proc->get_state())) {
     /* This is OK because this function is only called if the trigger was not
      * inhibited by the previous trigger in the chain. */
     hit = true;
@@ -287,9 +305,9 @@ void mcontrol6_t::tdata1_write(processor_t * const proc, const reg_t val, const 
   load = get_field(val, CSR_MCONTROL6_LOAD);
 }
 
-std::optional<match_result_t> icount_t::detect_icount_match(processor_t * const proc) noexcept
+std::optional<match_result_t> icount_t::detect_icount_fire(processor_t * const proc) noexcept
 {
-  if (!common_match(proc))
+  if (!common_match(proc) || !allow_action(proc->get_state()))
     return std::nullopt;
 
   std::optional<match_result_t> ret = std::nullopt;
@@ -299,13 +317,19 @@ std::optional<match_result_t> icount_t::detect_icount_match(processor_t * const 
     ret = match_result_t(TIMING_BEFORE, action);
   }
 
+  return ret;
+}
+
+void icount_t::detect_icount_decrement(processor_t * const proc) noexcept
+{
+  if (!common_match(proc) || !allow_action(proc->get_state()))
+    return;
+
   if (count >= 1) {
     if (count == 1)
       pending = 1;
     count = count - 1;
   }
-
-  return ret;
 }
 
 reg_t icount_t::tdata1_read(const processor_t * const proc) const noexcept
@@ -382,14 +406,15 @@ void itrigger_t::tdata1_write(processor_t * const proc, const reg_t val, const b
 
 std::optional<match_result_t> trap_common_t::detect_trap_match(processor_t * const proc, const trap_t& t) noexcept
 {
-  if (!common_match(proc))
+  // Use the previous privilege for matching
+  if (!common_match(proc, true))
     return std::nullopt;
 
   auto xlen = proc->get_xlen();
   bool interrupt = (t.cause() & ((reg_t)1 << (xlen - 1))) != 0;
   reg_t bit = t.cause() & ~((reg_t)1 << (xlen - 1));
   assert(bit < xlen);
-  if (simple_match(interrupt, bit)) {
+  if (simple_match(interrupt, bit) && allow_action(proc->get_state())) {
     hit = true;
     return match_result_t(TIMING_AFTER, action);
   }
@@ -569,10 +594,13 @@ std::optional<match_result_t> module_t::detect_icount_match() noexcept
 
   std::optional<match_result_t> ret = std::nullopt;
   for (auto trigger: triggers) {
-    auto result = trigger->detect_icount_match(proc);
+    auto result = trigger->detect_icount_fire(proc);
     if (result.has_value() && (!ret.has_value() || ret->action < result->action))
       ret = result;
   }
+  if (ret == std::nullopt || ret->action != MCONTROL_ACTION_DEBUG_MODE)
+    for (auto trigger: triggers)
+      trigger->detect_icount_decrement(proc);
   return ret;
 }
 

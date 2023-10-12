@@ -715,7 +715,6 @@ with_isa
 with_priv
 with_varch
 with_target
-enable_dirty
 enable_dual_endian
 '
       ac_precious_vars='build_alias
@@ -1382,7 +1381,8 @@ Optional Packages:
                           use the Regex library from boost - it is possible to
                           specify a certain library for the linker e.g.
                           --with-boost-regex=boost_regex-gcc-mt-d-1_33_1
-  --with-isa=RV64IMAFDC   Sets the default RISC-V ISA
+  --with-isa=RV64IMAFDC_zicntr_zihpm
+                          Sets the default RISC-V ISA
   --with-priv=MSU         Sets the default RISC-V privilege modes supported
   --with-varch=vlen:128,elen:64
                           Sets the default vector config
@@ -4742,6 +4742,9 @@ ac_fn_cxx_check_type "$LINENO" "__int128_t" "ac_cv_type___int128_t" "$ac_include
 if test "x$ac_cv_type___int128_t" = xyes; then :
   HAVE_INT128=yes
 
+
+$as_echo "#define HAVE_INT128 1" >>confdefs.h
+
 fi
 
 
@@ -5877,7 +5880,7 @@ _ACEOF
 else
 
 cat >>confdefs.h <<_ACEOF
-#define DEFAULT_ISA "RV64IMAFDC"
+#define DEFAULT_ISA "RV64IMAFDC_zicntr_zihpm"
 _ACEOF
 
 fi
@@ -6043,6 +6046,7 @@ _ACEOF
 else
   as_fn_error $? "libpthread is required" "$LINENO" 5
 fi
+
 
 # Check whether --enable-dual-endian was given.
 if test "${enable_dual_endian+set}" = set; then :
@@ -6405,6 +6409,8 @@ ac_config_files="$ac_config_files Makefile"
 ac_config_files="$ac_config_files riscv-fesvr.pc"
 
 ac_config_files="$ac_config_files riscv-disasm.pc"
+
+ac_config_files="$ac_config_files riscv-riscv.pc"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -7110,6 +7116,7 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "riscv-fesvr.pc") CONFIG_FILES="$CONFIG_FILES riscv-fesvr.pc" ;;
     "riscv-disasm.pc") CONFIG_FILES="$CONFIG_FILES riscv-disasm.pc" ;;
+    "riscv-riscv.pc") CONFIG_FILES="$CONFIG_FILES riscv-riscv.pc" ;;
 
   *) as_fn_error $? "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
   esac
