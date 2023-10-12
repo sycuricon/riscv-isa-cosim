@@ -7,6 +7,7 @@
 #include "magic_type.h"
 #include "decode_macros.h"
 
+#include <unistd.h>
 #include <cstdio>
 #include <sstream>
 
@@ -368,6 +369,7 @@ int cosim_cj_t::cosim_commit_stage(int hartid, reg_t dut_pc, uint32_t dut_insn, 
     auto data = debug_mmu->to_target(debug_mmu->load<uint64_t>(tohost_addr));
     memcpy(&tohost_data, &data, sizeof(data));
     debug_mmu->store<uint64_t>(tohost_addr, 0);
+    handle_tohost();
   }
   
   if (!check)
@@ -510,17 +512,46 @@ uint64_t cosim_cj_t::cosim_randomizer_data(unsigned int read_select) {
   return magic->load(read_select);
 }
 
-void cosim_cj_t::update_tohost_info() {
-  // tohost_addr = 0x80001000
-  switch (tohost_data & 0xff) {
-    // case 0x02:
-    //   fuzz_start_addr = (int64_t)tohost_data >> 8;
-    //   printf("[CJ] fuzz_start_addr: %016lx(%016lx)\n", tohost_data, fuzz_start_addr);
-    //   break;
-    // case 0x12:
-    //   fuzz_end_addr = (int64_t)tohost_data >> 8;
-    //   printf("[CJ] fuzz_end_addr: %016lx(%016lx)\n", tohost_data, fuzz_end_addr);     
-    //   break;
+void cosim_cj_t::handle_tohost() {
+  if (tohost_data == 0)
+    return;
+
+  // select device
+  switch ((tohost_data >> 56) & 0xff) {
+    case 0x0: {
+      // select cmd
+      switch ((tohost_data >> 48) & 0xff) {
+        case 0: {
+          // check payload
+          uint64_t payload = tohost_data << 16 >> 16;
+          if (payload & 1) {
+            printf("[CJ] trying to communicate with testbench\n");
+          }
+          else {
+            volatile uint64_t magic_mem[8] __attribute__((aligned(64)));
+            memif_t tmp(this);
+            tmp.read(payload, sizeof(magic_mem), (void*)magic_mem);
+
+            if (magic_mem[0] == 64) {
+              uint64_t len = magic_mem[3];
+              std::vector<char> buf(len);
+              tmp.read(magic_mem[2], len, buf.data());
+              write(1,buf.data(),len);
+            }
+            else {
+              printf("[CJ] unsupported syscall #%d!\n", magic_mem[0]);
+            }
+
+          }
+        }
+          break;
+        default:
+          break;
+      }
+    }
+      break;
+    default:
+      break;
   }
 }
 

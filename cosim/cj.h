@@ -168,7 +168,7 @@ public:
   checkboard_t<reg_t, NXPR, true> check_board;
   checkboard_t<freg_t, NFPR, false> f_check_board;
 
-  void update_tohost_info();
+  void handle_tohost();
 
   //debug
   void record_rd_mutation_stats(unsigned int matched_reg_count);
