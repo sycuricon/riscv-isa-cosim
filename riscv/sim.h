@@ -124,6 +124,7 @@ private:
   void interactive_mem(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_str(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_dumpmems(const std::string& cmd, const std::vector<std::string>& args);
+  void interactive_dumpallinfo(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_mtime(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_mtimecmp(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_until(const std::string& cmd, const std::vector<std::string>& args, bool noisy);

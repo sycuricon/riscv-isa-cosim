@@ -286,6 +286,7 @@ void sim_t::interactive()
   funcs["untiln"] = &sim_t::interactive_until_noisy;
   funcs["while"] = &sim_t::interactive_until_silent;
   funcs["dump"] = &sim_t::interactive_dumpmems;
+  funcs["dump_all"] = &sim_t::interactive_dumpallinfo;
   funcs["quit"] = &sim_t::interactive_quit;
   funcs["q"] = funcs["quit"];
   funcs["help"] = &sim_t::interactive_help;
@@ -371,6 +372,7 @@ void sim_t::interactive_help(const std::string& cmd, const std::vector<std::stri
     "mem [core] <hex addr>           # Show contents of virtual memory <hex addr> in [core] (physical memory <hex addr> if omitted)\n"
     "str [core] <hex addr>           # Show NUL-terminated C string at virtual address <hex addr> in [core] (physical address <hex addr> if omitted)\n"
     "dump                            # Dump physical memory to binary files\n"
+    "dump_all                        # Dump physical memory to hex and dump regs info to inst\n"
     "mtime                           # Show mtime\n"
     "mtimecmp <core>                 # Show mtimecmp for <core>\n"
     "until reg <core> <reg> <val>    # Stop when <reg> in <core> hits <val>\n"
@@ -775,6 +777,17 @@ void sim_t::interactive_dumpmems(const std::string& cmd, const std::vector<std::
     std::stringstream mem_fname;
     mem_fname << "mem.0x" << std::hex << mems[i].first << ".bin";
 
+    std::ofstream mem_file(mem_fname.str());
+    mems[i].second->dump(mem_file);
+    mem_file.close();
+  }
+}
+
+void sim_t::interactive_dumpallinfo(const std::string& cmd, const std::vector<std::string>& args)
+{
+  for (unsigned i = 0; i < mems.size(); i++) {
+    std::stringstream mem_fname;
+    mem_fname << "mem.0x" << std::hex << mems[i].first << ".hex";
     std::ofstream mem_file(mem_fname.str());
     mems[i].second->dump(mem_file);
     mem_file.close();
