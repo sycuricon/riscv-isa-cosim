@@ -789,7 +789,14 @@ void sim_t::interactive_dumpallinfo(const std::string& cmd, const std::vector<st
     std::stringstream mem_fname;
     mem_fname << "mem.0x" << std::hex << mems[i].first << ".hex";
     std::ofstream mem_file(mem_fname.str());
-    mems[i].second->dump(mem_file);
+    std::list<std::pair<reg_t,char*>> mem_list;
+    mems[i].second->get_memlist(mem_list);
+    std::list<char*> free_list;
+    add_reg_info(mem_list,free_list);
+    dump_memlist(mem_list,mem_file);
+    for(auto p=free_list.begin();p!=free_list.end();p++){
+      std::free(*p);
+    }
     mem_file.close();
   }
 }

@@ -11,6 +11,8 @@
 #include "simif.h"
 
 #include <fesvr/htif.h>
+#include <list>
+#include <fstream>
 #include <vector>
 #include <map>
 #include <string>
@@ -125,6 +127,8 @@ private:
   void interactive_str(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_dumpmems(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_dumpallinfo(const std::string& cmd, const std::vector<std::string>& args);
+  void dump_memlist(std::list<std::pair<reg_t,char*>>& mem_list,std::ofstream& mem_file);
+  void add_reg_info(std::list<std::pair<reg_t,char*>>& mem_list,std::list<char*>& free_list);
   void interactive_mtime(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_mtimecmp(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_until(const std::string& cmd, const std::vector<std::string>& args, bool noisy);
