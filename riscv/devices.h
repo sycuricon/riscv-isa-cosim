@@ -8,6 +8,7 @@
 #include <map>
 #include <queue>
 #include <vector>
+#include <list>
 #include <utility>
 #include <cassert>
 
@@ -43,6 +44,7 @@ class abstract_mem_t : public abstract_device_t {
   virtual char* contents(reg_t addr) = 0;
   virtual reg_t size() = 0;
   virtual void dump(std::ostream& o) = 0;
+  virtual void get_memlist(std::list<std::pair<reg_t,char*>>& mem_list) = 0;
 };
 
 class mem_t : public abstract_mem_t {
@@ -56,6 +58,7 @@ class mem_t : public abstract_mem_t {
   char* contents(reg_t addr) override;
   reg_t size() override { return sz; }
   void dump(std::ostream& o) override;
+  void get_memlist(std::list<std::pair<reg_t,char*>>& mem_list);
 
  private:
   bool load_store(reg_t addr, size_t len, uint8_t* bytes, bool store);
