@@ -19,6 +19,6 @@ void sim_t::dump_memlist(std::list<std::pair<reg_t,char*>>& mem_list,std::ofstre
     }
 }
 
-void sim_t::add_reg_info(std::list<std::pair<reg_t,char*>>& mem_list,std::list<char*>& free_list){
-
+void sim_t::dump_register(){
+    
 }
