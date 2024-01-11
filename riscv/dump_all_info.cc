@@ -20,7 +20,10 @@ void sim_t::dump_memlist(std::list<std::pair<reg_t,char*>>& mem_list,std::ofstre
 }
 
 void sim_t::dump_register(){
-    std::ofstream reg_state("reginfo.bin",std::ios_base::binary);
+    std::ofstream reg_state("reginfo.json");
+    reg_state<<"{"<<std::endl;
+    reg_state<<"\t\"csr\":"<<std::endl;
+    reg_state<<"\t{"<<std::endl;
     processor_t *core = get_core(0);
     int csr_index[]={
         CSR_SSTATUS,
@@ -55,20 +58,20 @@ void sim_t::dump_register(){
         CSR_PMPADDR15
     };
     static const char* csr_name[]={
-        "sstatus",
-        "sie",
-        "stvec",
+        "sstatus ",
+        "sie     ",
+        "stvec   ",
         "scounteren",
         "sscratch",
-        "satp",
-        "misa",
-        "medeleg",
-        "medeleg",
-        "mie",
-        "mtvec",
+        "satp    ",
+        "misa    ",
+        "medeleg ",
+        "mideleg ",
+        "mie     ",
+        "mtvec   ",
         "mcounteren",
-        "pmpcfg0",
-        "pmpcfg2",
+        "pmpcfg0 ",
+        "pmpcfg2 ",
         "pmpaddr0",
         "pmpaddr1",
         "pmpaddr2",
@@ -93,27 +96,38 @@ void sim_t::dump_register(){
         }
         reg_t csr_val=(core->get_state()->csrmap[csr_index[i]])->read();
         std::printf("dump csr %s:\t%016llx\n",csr_name[i],csr_val);
-        reg_state.write((char*)&csr_val,sizeof(csr_val));
+        if(i!=0)reg_state << "," << std::endl;
+        reg_state << "\t\t\"" << csr_name[i] << "\"\t:\t\"" << std::hex << std::setw(16) << std::setfill('0') << csr_val << "\"";
     }
+    reg_state << std::endl << "\t}," << std::endl;
     
     reg_t mstatus=core->get_state()->mstatus->read();
     reg_t priv=core->get_state()->prv;
-    mstatus=((mstatus&~((uint64_t)0b11<<11))|((priv&0b11)<<11));
-    mstatus|=(mstatus&(0b1<<3))<<4;
-    reg_state.write((char*)&mstatus,sizeof(mstatus));
     std::printf("dump mstatus:\t%016llx\n",mstatus);
     std::printf("set the MPP to priv,set the MIE to PMIE\n");
-
     reg_t pc=core->get_state()->pc;
-    reg_state.write((char*)&pc,sizeof(pc));
     std::printf("dump pc:\t%016llx\n",pc);
     std::printf("set the PC to MEPC\n");
 
+    reg_state << "\t\"target\":" << std::endl;
+    reg_state << "\t{" << std::endl;
+    reg_state << "\t\t\"mstatus\"\t:\t\"" << std::hex << std::setw(16) << std::setfill('0') << mstatus << "\"," << std::endl;
+    reg_state << "\t\t\"priv\"\t:\t\"" << std::hex << priv << "\"," << std::endl;
+    reg_state << "\t\t\"address\"\t:\t\"" << std::hex << std::setw(16) << std::setfill('0') << pc << "\"" << std::endl;
+    reg_state << "\t},"<<std::endl;
+
+    reg_state << "\t\"GPR\":" << std::endl;
+    reg_state << "\t{" << std::endl;
     for(int i=1;i<32;i++){
         reg_t reg=core->get_state()->XPR[i];
         std::printf("dump reg %d:\t%016llx\n",i,reg);
-        reg_state.write((char*)&reg,sizeof(reg));
+        reg_state << "\t\t\"x" << std::dec << i << "\"\t\t:\t\"" << std::hex << std::setw(16) << std::setfill('0') << \
+            reg << "\"";
+        if(i<=30)reg_state << ",";
+        reg_state << std::endl;
     }
+    reg_state << "\t}"<<std::endl;
+    reg_state << "}"<<std::endl;
 
     reg_state.close();
 }
