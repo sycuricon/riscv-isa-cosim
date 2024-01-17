@@ -43,17 +43,25 @@ static int text_indent = 0;
     do{\
         DO_INDENT(fout);\
         (fout) << '\"' << name << '\"' << ':' <<'\"';\
-        reg_t mask = (len) == 64 ? ~(reg_t)0 : (((reg_t)1 << (len)) - 1) << offset;\
-        reg_t field_value = (((val) & mask) >> offset);\
+        reg_t _mask_ = (len) == 64 ? ~(reg_t)0 : (((reg_t)1 << (len)) - 1) << offset;\
+        reg_t field_value = (((val) & _mask_) >> offset);\
         if(len >= 4){\
             (fout) << std::setw((len)/4) << std::setfill('0') << std::hex << field_value;\
         }else{\
-            for(int mask=1<<(len-1);mask;mask>>=1){\
-                (fout) << std::setw(1) << std::dec << ((mask & field_value) ? 1 : 0);\
+            for(int _mask_=1<<(len-1);_mask_;_mask_>>=1){\
+                (fout) << std::setw(1) << std::dec << ((_mask_ & field_value) ? 1 : 0);\
             }\
         }\
         (fout) << '\"';\
     }while(0)
+
+#define DUMP_STRING(fout,name,str) \
+    do{\
+        DO_INDENT(fout);\
+        (fout) << '\"' << name << '\"' << ':' << '\"' << str << '\"';\
+    }while(0)
+#define DUMP_STRING_NOT_FINAL(fout,name,str) DUMP_STRING(fout,name,str); (fout) << ',' << std::endl;
+#define DUMP_STRING_FINAL(fout,name,str) DUMP_STRING(fout,name,str); (fout) << std::endl;
 
 #define DUMP_FIELD_NOT_FINAL(fout,name,val,offset,len) DUMP_FIELD(fout,name,val,offset,len); (fout) << "," << std::endl
 #define DUMP_FIELD_FINAL(fout,name,val,offset,len) DUMP_FIELD(fout,name,val,offset,len); (fout) << std::endl
@@ -95,11 +103,6 @@ static void dump_counteren(std::ofstream& fout,reg_t value,const char* reg_name)
 static void dump_reg(std::ofstream& fout,reg_t value,const char* reg_name){
     DUMP_VAL(reg_name,value);
     DUMP_FIELD(fout,reg_name,value,0,64);
-}
-
-static void dump_pmpaddr(std::ofstream& fout,reg_t value,const char* reg_name){
-    DUMP_VAL(reg_name,value);
-    DUMP_FIELD(fout,reg_name,value<<2,0,56);
 }
 
 static void dump_priv(std::ofstream& fout,reg_t value,const char* reg_name){
@@ -148,36 +151,40 @@ static void dump_mie(std::ofstream& fout,reg_t value,const char* reg_name){
     DUMP_REGISTER(fout,reg_name,value,name,offset,len,sizeof(name)/sizeof(name[0]));
 }
 
-static void dump_pmpcfg0(std::ofstream& fout,reg_t value,const char* reg_name){
-    DUMP_VAL(reg_name,value);
-    DUMP_HEAD(fout,reg_name);
+static void dump_pmpcfg(std::ostream& fout,reg_t cfg,reg_t begin,reg_t end,const char* cfg_name,const char* addr_name){
+    DUMP_VAL(cfg_name,cfg);
+    DUMP_VAL(addr_name,end);
+    DUMP_HEAD(fout,cfg_name);
     static const char* name[]={"R","W","X","A","L"};
+    enum pmp {OFF,TOR,NA4,NAPOT};
+    static const char* pmpkind[]={"OFF","TOR","NA4","NAPOT"};
     static int offset[]={0,1,2,3,7};
     static int len[]={1,1,1,2,1};
-    static const char* sub_pmpcfg_name[]={"pmp0cfg","pmp1cfg","pmp2cfg","pmp3cfg",\
-        "pmp4cfg","pmp5cfg","pmp6cfg","pmp7cfg"};
-    for(int i=0;i<8;i++){
-        DUMP_REGISTER(fout,sub_pmpcfg_name[i],((value)&0xff),name,offset,len,sizeof(name)/sizeof(name[0]));
-        value>>=8;
-        if(i!=7)fout<<',';
-        fout<<std::endl;
-    }
-    DUMP_TAIL(fout);
-}
-
-static void dump_pmpcfg2(std::ofstream& fout,reg_t value,const char* reg_name){
-    DUMP_VAL(reg_name,value);
-    DUMP_HEAD(fout,reg_name);
-    static const char* name[]={"R","W","X","A","L"};
-    static int offset[]={0,1,2,3,7};
-    static int len[]={1,1,1,2,1};
-    static const char* sub_pmpcfg_name[]={"pmp8cfg","pmp9cfg","pmp10cfg","pmp11cfg",\
-        "pmp12cfg","pmp13cfg","pmp14cfg","pmp15cfg"};
-    for(int i=0;i<8;i++){
-        DUMP_REGISTER(fout,sub_pmpcfg_name[i],((value)&0xff),name,offset,len,sizeof(name)/sizeof(name[0]));
-        value>>=8;
-        if(i!=7)fout<<',';
-        fout<<std::endl;
+    DUMP_FIELD_NOT_FINAL(fout,name[0],cfg,offset[0],len[0]);
+    DUMP_FIELD_NOT_FINAL(fout,name[1],cfg,offset[1],len[1]);
+    DUMP_FIELD_NOT_FINAL(fout,name[2],cfg,offset[2],len[2]);
+    pmp kind=(pmp)((cfg&(((1<<2)-1)<<3))>>3);
+    DUMP_STRING_NOT_FINAL(fout,name[3],pmpkind[kind]);
+    DUMP_FIELD_NOT_FINAL(fout,name[4],cfg,offset[4],len[4]);
+    begin<<=2;
+    end<<=2;
+    switch(kind){
+        case OFF:
+        case TOR:
+            DUMP_FIELD_NOT_FINAL(fout,"begin",begin,0,64);
+            DUMP_FIELD_FINAL(fout,"end",end,0,64);
+            break;
+        case NA4:
+            DUMP_FIELD_NOT_FINAL(fout,"begin",end,0,64);
+            DUMP_FIELD_FINAL(fout,"end",end|0b11,0,64);
+            break;
+        default:
+            reg_t mask=0b100;
+            while(mask&end)mask<<=1;
+            mask<<=1;
+            mask-=1;
+            DUMP_FIELD_NOT_FINAL(fout,"begin",end&(~mask),0,64);
+            DUMP_FIELD_FINAL(fout,"end",end|mask,0,64);
     }
     DUMP_TAIL(fout);
 }
@@ -206,25 +213,7 @@ void sim_t::dump_register(){
         CSR_MIDELEG,
         CSR_MIE,
         CSR_MTVEC,
-        CSR_MCOUNTEREN,
-        CSR_PMPCFG0,
-        CSR_PMPCFG2,
-        CSR_PMPADDR0, 
-        CSR_PMPADDR1, 
-        CSR_PMPADDR2, 
-        CSR_PMPADDR3, 
-        CSR_PMPADDR4, 
-        CSR_PMPADDR5, 
-        CSR_PMPADDR6, 
-        CSR_PMPADDR7, 
-        CSR_PMPADDR8, 
-        CSR_PMPADDR9, 
-        CSR_PMPADDR10,
-        CSR_PMPADDR11,
-        CSR_PMPADDR12,
-        CSR_PMPADDR13,
-        CSR_PMPADDR14,
-        CSR_PMPADDR15
+        CSR_MCOUNTEREN
     };
     static const char* csr_name[]={
         "stvec",
@@ -236,25 +225,7 @@ void sim_t::dump_register(){
         "mideleg",
         "mie",
         "mtvec",
-        "mcounteren",
-        "pmpcfg0",
-        "pmpcfg2",
-        "pmpaddr0",
-        "pmpaddr1",
-        "pmpaddr2",
-        "pmpaddr3",
-        "pmpaddr4",
-        "pmpaddr5",
-        "pmpaddr6",
-        "pmpaddr7",
-        "pmpaddr8",
-        "pmpaddr9",
-        "pmpaddr10",
-        "pmpaddr11",
-        "pmpaddr12",
-        "pmpaddr13",
-        "pmpaddr14",
-        "pmpaddr15",
+        "mcounteren"
     };
     typedef void (*DumpFunc)(std::ofstream&,reg_t,const char*);
     DumpFunc dump_func[]={
@@ -267,25 +238,7 @@ void sim_t::dump_register(){
         &dump_mideleg,
         &dump_mie,
         &dump_tvec,
-        &dump_counteren,
-        &dump_pmpcfg0,
-        &dump_pmpcfg2,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr,
-        &dump_pmpaddr
+        &dump_counteren
     };
 
     for(size_t i=0;i<(sizeof(csr_index)/sizeof(csr_index[0]));i++){
@@ -298,6 +251,49 @@ void sim_t::dump_register(){
         if(i!=sizeof(csr_index)/sizeof(csr_index[0])-1){
             fout<<",";
         }
+        fout<<std::endl;
+    }
+    DUMP_TAIL(fout);
+    fout<<","<<std::endl;
+
+    DUMP_HEAD(fout,"pmp");
+    static const char* pmpcfg_name[]={
+        "pmp0cfg","pmp1cfg","pmp2cfg","pmp3cfg",
+        "pmp4cfg","pmp5cfg","pmp6cfg","pmp7cfg",
+        "pmp8cfg","pmp9cfg","pmp10cfg","pmp11cfg",
+        "pmp12cfg","pmp13cfg","pmp14cfg","pmp15cfg"
+    };
+    static const char* pmpaddr_name[]={
+        "pmpaddr0","pmpaddr1","pmpaddr2","pmpaddr3",
+        "pmpaddr4","pmpaddr5","pmpaddr6","pmpaddr7",
+        "pmpaddr8","pmpaddr9","pmpaddr10","pmpaddr11",
+        "pmpaddr12","pmpaddr13","pmpaddr14","pmpaddr15"
+    };
+    int pmpcfg_index[]={
+        CSR_PMPCFG0,CSR_PMPCFG2
+    };
+    int pmpaddr_index[]={
+        CSR_PMPADDR0, CSR_PMPADDR1, CSR_PMPADDR2, CSR_PMPADDR3, 
+        CSR_PMPADDR4, CSR_PMPADDR5, CSR_PMPADDR6, CSR_PMPADDR7, 
+        CSR_PMPADDR8, CSR_PMPADDR9, CSR_PMPADDR10,CSR_PMPADDR11,
+        CSR_PMPADDR12,CSR_PMPADDR13,CSR_PMPADDR14,CSR_PMPADDR15
+    };
+    for(int i=0;i<16;i++){
+        if(core->get_state()->csrmap.find(pmpcfg_index[i>>3])==core->get_state()->csrmap.end()){
+            std::printf("no csr %d\n",pmpcfg_index[i>>3]);
+            continue;
+        }
+        reg_t cfg=(core->get_state()->csrmap[pmpcfg_index[i>>3]]->read()>>((i&0b111)<<3))&0xff;
+
+        reg_t begin=i==0?0:core->get_state()->csrmap[pmpaddr_index[i-1]]->read();
+        if(core->get_state()->csrmap.find(pmpaddr_index[i])==core->get_state()->csrmap.end()){
+            std::printf("no csr %d\n",pmpaddr_index[i]);
+            continue;
+        }
+        reg_t end=core->get_state()->csrmap[pmpaddr_index[i]]->read();
+
+        dump_pmpcfg(fout,cfg,begin,end,pmpcfg_name[i],pmpaddr_name[i]);
+        if(i!=15)fout<<",";
         fout<<std::endl;
     }
     DUMP_TAIL(fout);
