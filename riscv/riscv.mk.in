@@ -74,6 +74,7 @@ riscv_srcs = \
 	vector_unit.cc \
 	socketif.cc \
 	cfg.cc \
+	dump_all_info.cc \
 	$(riscv_gen_srcs) \
 
 riscv_test_srcs = \
