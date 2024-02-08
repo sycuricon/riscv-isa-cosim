@@ -84,6 +84,18 @@ class basic_csr_t: public csr_t {
   reg_t val;
 };
 
+// For probebuffer
+class probebuffer_csr_t: public csr_t {
+ public:
+  probebuffer_csr_t(processor_t* const proc, const reg_t addr);
+
+  virtual reg_t read() const noexcept override;
+ protected:
+  virtual bool unlogged_write(const reg_t val) noexcept override;
+ private:
+  reg_t val;
+};
+
 class pmpaddr_csr_t: public csr_t {
  public:
   pmpaddr_csr_t(processor_t* const proc, const reg_t addr);
