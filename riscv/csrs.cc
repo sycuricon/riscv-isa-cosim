@@ -88,10 +88,6 @@ probebuffer_csr_t::probebuffer_csr_t(processor_t* const proc, const reg_t addr):
     ;
 }
 
-reg_t probebuffer_csr_t::read(){
-  return 0;
-}
-
 bool probebuffer_csr_t::unlogged_write(const reg_t data) noexcept {
   #define CMD_MASK                0xFFFF'FFFF'FFFF'0000ul
   #define OP_MASK                 0x0000'0000'0000'FFFFul
@@ -106,8 +102,8 @@ bool probebuffer_csr_t::unlogged_write(const reg_t data) noexcept {
 
   switch (data & CMD_MASK) {
         case CMD_SWITCH_STATE:
-            state = data & OP_MASK;
-            return;
+            this->val = data & OP_MASK;
+            return true;
         case CMD_POWER_OFF:
             printf("[*] simulation exit with %ld\n", data & OP_MASK);
             exit(0);
@@ -115,7 +111,7 @@ bool probebuffer_csr_t::unlogged_write(const reg_t data) noexcept {
             break;
     }
 
-    switch (state) {
+    switch (this->val) {
         case STATE_DEFAULT:
             printf("[*] prober get data: %lu\n", data);
             break;
@@ -123,7 +119,7 @@ bool probebuffer_csr_t::unlogged_write(const reg_t data) noexcept {
             printf("%lu ", data);
             break;
         case STATE_DUMP_CHAR:
-            printf("%c", data);
+            printf("%c", (char)data);
             break;
         case STATE_DUMP_ADDR:
             printf("%p ", (void *)data);
