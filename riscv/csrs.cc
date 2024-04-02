@@ -89,39 +89,39 @@ probebuffer_csr_t::probebuffer_csr_t(processor_t* const proc, const reg_t addr):
 }
 
 bool probebuffer_csr_t::unlogged_write(const reg_t data) noexcept {
-  #define CMD_MASK                0xFFFF'FFFF'FFFF'0000ul
-  #define OP_MASK                 0x0000'0000'0000'FFFFul
+  #define PBUF_CMD_MASK               0xFFFF'FFFF'FFFF'0000ul
+  #define PBUF_OP_MASK                0x0000'0000'0000'FFFFul
 
-  #define CMD_SWITCH_STATE        0xAF1B'608E'883A'0000ul
-  #define STATE_DEFAULT           0
-  #define STATE_DUMP_NUM          1
-  #define STATE_DUMP_CHAR         2
-  #define STATE_DUMP_ADDR         3
+  #define PBUF_CMD_SWITCH_STATE       0xAF1B'608E'883A'0000ul
+  #define PBUF_STATE_DEFAULT          0
+  #define PBUF_STATE_DUMP_NUM         1
+  #define PBUF_STATE_DUMP_CHAR        2
+  #define PBUF_STATE_DUMP_ADDR        3
 
-  #define CMD_POWER_OFF           0xAF1B'608E'883B'0000ul
+  #define PBUF_CMD_POWER_OFF          0xAF1B'608E'883B'0000ul
 
-  switch (data & CMD_MASK) {
-        case CMD_SWITCH_STATE:
-            this->val = data & OP_MASK;
+  switch (data & PBUF_CMD_MASK) {
+        case PBUF_CMD_SWITCH_STATE:
+            this->val = data & PBUF_OP_MASK;
             return true;
-        case CMD_POWER_OFF:
-            printf("[*] simulation exit with %ld\n", data & OP_MASK);
+        case PBUF_CMD_POWER_OFF:
+            printf("[*] simulation exit with %ld\n", data & PBUF_OP_MASK);
             exit(0);
         default:
             break;
     }
 
     switch (this->val) {
-        case STATE_DEFAULT:
+        case PBUF_STATE_DEFAULT:
             printf("[*] prober get data: %lu\n", data);
             break;
-        case STATE_DUMP_NUM:
+        case PBUF_STATE_DUMP_NUM:
             printf("%lu ", data);
             break;
-        case STATE_DUMP_CHAR:
+        case PBUF_STATE_DUMP_CHAR:
             printf("%c", (char)data);
             break;
-        case STATE_DUMP_ADDR:
+        case PBUF_STATE_DUMP_ADDR:
             printf("%p ", (void *)data);
             break;
         default:
