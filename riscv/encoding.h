@@ -3009,6 +3009,7 @@
 #define MATCH_ZUNPKD832 0xad700077
 #define MASK_ZUNPKD832 0xfff0707f
 
+#define CSR_PROBEBUFFER 0x800
 #define CSR_FFLAGS 0x1
 #define CSR_FRM 0x2
 #define CSR_FCSR 0x3
