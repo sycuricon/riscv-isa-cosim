@@ -144,7 +144,7 @@ std::map<std::string, uint64_t> htif_t::load_payload(const std::string& payload,
   } preload_aware_memif(this);
 
   try {
-    if(path.ends_with(std::string(".dist"))){
+    if(path.size() >= 5 && path.substr(path.size()-5,5) == ".dist"){
       return load_dist(path.c_str(), &preload_aware_memif, entry, expected_xlen);
     }else{
       return load_elf(path.c_str(), &preload_aware_memif, entry, expected_xlen);
