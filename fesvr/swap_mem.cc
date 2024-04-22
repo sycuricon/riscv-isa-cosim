@@ -19,7 +19,6 @@ void swap_mem_manager::register_swap_mem(uint64_t block_begin, size_t block_len,
 }
 
 void swap_mem_manager::do_mem_swap(){
-  swap_idx --;
   if(swap_idx < 0){
     throw std::invalid_argument(std::string("the program is not halted at the last swap mem"));
   }
@@ -27,4 +26,5 @@ void swap_mem_manager::do_mem_swap(){
   for(auto p=swap_mem_vector.begin();p!=swap_mem_vector.end();p++){
     mem_manager->write(p->block_begin, p->block_len, p->mem_block);
   }
+  swap_idx --;
 }
