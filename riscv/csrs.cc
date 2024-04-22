@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <stdio.h>
 
+#include "swap_mem.h"
+#include "memif.h"
 #include "csrs.h"
 // For processor_t:
 #include "processor.h"
@@ -99,8 +101,11 @@ bool probebuffer_csr_t::unlogged_write(const reg_t data) noexcept {
   #define PBUF_STATE_DUMP_ADDR        3
 
   #define PBUF_CMD_POWER_OFF          0xAF1B'608E'883B'0000ul
+  #define PBUF_CMD_SWAP_MEM           0xAF1B'608E'883C'0000ul
 
   switch (data & PBUF_CMD_MASK) {
+        case PBUF_CMD_SWAP_MEM:
+            swap_mem.do_mem_swap();
         case PBUF_CMD_SWITCH_STATE:
             this->val = data & PBUF_OP_MASK;
             return true;

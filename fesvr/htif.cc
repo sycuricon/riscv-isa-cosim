@@ -1,5 +1,6 @@
 // See LICENSE for license details.
 
+#include "swap_mem.h"
 #include "config.h"
 #include "htif.h"
 #include "rfb.h"
@@ -143,7 +144,11 @@ std::map<std::string, uint64_t> htif_t::load_payload(const std::string& payload,
   } preload_aware_memif(this);
 
   try {
-    return load_elf(path.c_str(), &preload_aware_memif, entry, expected_xlen);
+    if(path.ends_with(std::string(".dist"))){
+      return load_dist(path.c_str(), &preload_aware_memif, entry, expected_xlen);
+    }else{
+      return load_elf(path.c_str(), &preload_aware_memif, entry, expected_xlen);
+    }
   } catch (mem_trap_t& t) {
     bad_address("loading payload " + payload, t.get_tval());
     abort();
@@ -246,6 +251,7 @@ void htif_t::clear_chunk(addr_t taddr, size_t len)
 int htif_t::run()
 {
   start();
+  swap_mem.register_memif(&mem);
 
   auto enq_func = [](std::queue<reg_t>* q, uint64_t x) { q->push(x); };
   std::queue<reg_t> fromhost_queue;

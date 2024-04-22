@@ -1,5 +1,6 @@
 // See LICENSE for license details.
 
+#include "swap_mem.h"
 #include "config.h"
 #include "elf.h"
 #include "memif.h"
@@ -17,6 +18,7 @@
 #include <vector>
 #include <map>
 #include <cerrno>
+#include <fstream>
 
 std::map<std::string, uint64_t> load_elf(const char* fn, memif_t* memif, reg_t* entry, unsigned required_xlen = 0)
 {
@@ -126,4 +128,42 @@ std::map<std::string, uint64_t> load_elf(const char* fn, memif_t* memif, reg_t* 
   munmap(buf, size);
 
   return symbols;
+}
+
+std::map<std::string, uint64_t> load_dist(const char* fn, memif_t* memif, reg_t* entry, unsigned required_xlen = 0){
+  std::ifstream bin_dist(fn);
+
+  uint64_t mem_begin, mem_end;
+  bin_dist >> std::hex >> mem_begin >> std::hex >> mem_end;
+  *entry = (reg_t)mem_begin;
+
+  uint64_t block_begin;
+  size_t block_len;
+  std::string block_kind;
+  std::string init_file_name;
+  while(bin_dist >> std::hex >> block_begin >> std::hex >> block_len >> block_kind >> init_file_name){
+    std::ifstream init_file(init_file_name);
+    init_file.seekg(0, std::ios_base::end);
+    size_t file_size = init_file.tellg();
+    init_file.seekg(0, std::ios_base::beg);
+    if(file_size>block_len){
+      throw std::invalid_argument(std::string("the binay file length is out of block bound"));
+    }
+    char* file_buffer = new char[file_size];
+    init_file.read(file_buffer, file_size);
+
+    if(block_kind == "keep"){
+      memif->write(block_begin, file_size, file_buffer);
+      delete [] file_buffer;
+    }else if(block_kind == "swap"){
+      int swap_idx;
+      bin_dist >> swap_idx;
+      swap_mem.register_swap_mem(block_begin, file_size, file_buffer, swap_idx);
+    }else{
+      throw std::invalid_argument(std::string("the block kind is invalid"));
+      delete [] file_buffer;
+    }
+  }
+
+  return std::map<std::string, uint64_t>();
 }
