@@ -2,6 +2,14 @@
 
 swap_mem_manager swap_mem;
 
+swap_mem_manager::~swap_mem_manager(){
+  for(auto p=swap_manager.begin();p!=swap_manager.end();p++){
+    for(auto q=p->begin();q!=p->end();q++){
+      delete [] q->mem_block;
+    }
+  }
+}
+
 void swap_mem_manager::register_swap_mem(uint64_t block_begin, size_t block_len, char* mem_block, int swap_idx){
   if(swap_manager.size() <= swap_idx ){
     swap_manager.resize(swap_idx + 1);

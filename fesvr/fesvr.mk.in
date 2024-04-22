@@ -14,6 +14,7 @@ fesvr_install_hdrs = \
   device.h \
   rfb.h \
   tsi.h \
+  swap_mem.h \
 
 fesvr_install_config_hdr = yes
 
@@ -36,6 +37,7 @@ fesvr_srcs = \
   option_parser.cc \
   term.cc \
   tsi.cc \
+  swap_mem.cc \
 
 fesvr_install_prog_srcs = \
   elf2hex.cc \
