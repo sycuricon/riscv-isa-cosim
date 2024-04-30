@@ -116,3 +116,9 @@ void mem_t::dump(std::ostream& o) {
     }
   }
 }
+
+void mem_t::get_memlist(std::list<std::pair<reg_t,char*>>& mem_list){
+  for(auto p=sparse_memory_map.begin();p!=sparse_memory_map.end();p++){
+    mem_list.push_back(std::make_pair(p->first<<12,p->second));
+  }
+}
