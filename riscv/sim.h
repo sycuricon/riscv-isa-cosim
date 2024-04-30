@@ -11,6 +11,8 @@
 #include "simif.h"
 
 #include <fesvr/htif.h>
+#include <list>
+#include <fstream>
 #include <vector>
 #include <map>
 #include <string>
@@ -124,6 +126,45 @@ private:
   void interactive_mem(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_str(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_dumpmems(const std::string& cmd, const std::vector<std::string>& args);
+  
+  struct reg_info_mem{
+    std::list<std::pair<reg_t,char*>>::iterator page;
+    uint64_t base;
+    uint32_t* inst_page;
+    uint64_t* data_page;
+    int inst_index;
+    int data_index;
+    static const int inst_page_len=2800;
+    static const int inst_end=inst_page_len/4;
+    static const int data_end=(4096-inst_page_len)/8;
+    static uint64_t mem_base;
+    reg_info_mem(std::list<std::pair<reg_t,char*>>::iterator p){
+      page=p;
+      inst_index=0;
+      data_index=0;
+      base=p->first+mem_base;
+      inst_page=(uint32_t*)p->second;
+      data_page=(uint64_t*)(&p->second[inst_page_len]);
+    }
+    int inst_remain(){return inst_end-inst_index;}
+    int data_remain(){return data_end-data_index;}
+    void write_inst(uint32_t inst){inst_page[inst_index++]=inst;}
+    void write_data(uint64_t data){data_page[data_index++]=data;}
+    uint64_t get_data_addr(){return (uint64_t)((char*)&data_page[data_index]-(char*)&inst_page[0])+base;}
+    bool write_li(int regindex,uint64_t imm);
+    bool write_jal_abs(uint64_t abs);
+    bool write_mv_csr(int csrindex,uint64_t imm);
+    bool write_store(uint64_t addr,uint64_t imm);
+  };
+  void interactive_dumpallinfo(const std::string& cmd, const std::vector<std::string>& args);
+  void interactive_dumpmeminfo(const std::string& cmd, const std::vector<std::string>& args);
+  void dump_memlist(std::list<std::pair<reg_t,char*>>& mem_list,std::ofstream& mem_file);
+  void add_reg_info(std::list<std::pair<reg_t,char*>>& mem_list,std::list<char*>& free_list);
+  reg_info_mem find_useless_page(std::list<std::pair<reg_t,char*>>::iterator begin,\
+    std::list<std::pair<reg_t,char*>>& mem_list,std::list<char*>& free_list);
+  void dump_regfile(int regindex,uint64_t imm,reg_info_mem& p,std::list<std::pair<reg_t,char*>>& mem_list,std::list<char*>& free_list);
+  void dump_csrfile(int csrindex,uint64_t imm,reg_info_mem& p,std::list<std::pair<reg_t,char*>>& mem_list,std::list<char*>& free_list);
+
   void interactive_mtime(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_mtimecmp(const std::string& cmd, const std::vector<std::string>& args);
   void interactive_until(const std::string& cmd, const std::vector<std::string>& args, bool noisy);
